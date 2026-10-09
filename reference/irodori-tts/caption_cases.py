@@ -1,6 +1,6 @@
 """Writes the cases the C++ caption strip, tokenizer and caption condition are checked against.
 
-usage: uv run python caption_cases.py <out dir>
+usage: uv run python caption_cases.py <out dir> [--model mf|rf|anime|large] [--model-dir DIR]
 
   caption-cases.tsv  one line per caption: its UTF-8 in hex, a tab, what the runtime keeps of it, str.strip() and
                      nothing else, in hex, a tab, and the ids the runtime's caption tokenizer gives it with <s>, none
@@ -14,7 +14,7 @@ back to bytes, and captions of more than 128 tokens and of nearly 512, the longe
 """
 
 import os
-import sys
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -26,10 +26,15 @@ from irodori_tts.model import TextToLatentRFDiT
 from irodori_tts.tokenizer import PretrainedTextTokenizer
 from pins import MODELS, snapshot
 
-out_dir = sys.argv[1]
+parser = argparse.ArgumentParser()
+parser.add_argument("out_dir")
+parser.add_argument("--model", choices=sorted(MODELS), default="mf")
+parser.add_argument("--model-dir")
+args = parser.parse_args()
+out_dir = args.out_dir
 os.makedirs(out_dir, exist_ok=True)
 torch.set_grad_enabled(False)
-model_dir = snapshot(MODELS["mf"])
+model_dir = args.model_dir if args.model_dir else snapshot(MODELS[args.model])
 state, cfg_dict, inference_cfg, text_encoder_config = _load_checkpoint_for_inference(Path(model_dir) / "model.safetensors")
 cfg = merge_dataclass_overrides(ModelConfig(), cfg_dict, section="model")
 assert cfg.use_caption_condition and cfg.caption_tokenizer_repo_resolved == cfg.text_tokenizer_repo

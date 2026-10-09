@@ -107,6 +107,10 @@ the path of a model of the catalog.
 Link `libspeech` from a release archive ([install.md](install.md#release-archives)). On Windows, define `SPEECH_SHARED`
 and link `speech.lib`. Inside this CMake project, link the target `speech` (shared) or `speech-static`.
 
+An Irodori RF request may explicitly set `SPEECH_OPT_IRODORI_COMPATIBLE` to accept the official runtime's caption
+truncation and inactive caption/speaker guidance. It defaults to false. After synthesis,
+`speech_result_instructions_truncated()` reports whether the caption exceeded the model's token limit.
+
 ## Functions
 
 - **Loading.** `speech_model_load()` loads a model from its one GGUF file, which holds its codec. A file made for a
@@ -129,6 +133,9 @@ and link `speech.lib`. Inside this CMake project, link the target `speech` (shar
 - **Quantizing.** `speech_quantize()` writes a model file of F32 weights in F16, Q8_0, Q6_K, Q5_K or Q4_K, on the CPU,
   as `speech quantize` does ([cli.md](cli.md#speech-quantize)). Silero VAD's file is F32 alone, and is refused.
 - **Voices.** `speech_voice_add()` adds a voice to a loaded model from a voice file or a reference WAVE file at any rate.
+  `speech_voice_add_with_info()` adds a voice and returns an owned model-information snapshot in one operation.
+  On failure, neither the registered voices nor the output pointer changes. Free the snapshot with
+  `speech_model_info_free()`. Added voices remain in memory until the model is freed.
   `speech_voice_make()` writes a voice file from a reference, reading only the codec's encoder from the model file.
   `speech_voice_make_from()` writes one from the parameters `speech_voice_params_new()` makes: several references
   (`speech_voice_params_add_reference()`), another loudness (`speech_voice_params_set_loudness()`) or the recordings' own

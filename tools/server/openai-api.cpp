@@ -13,6 +13,7 @@
 #include "base64.h"
 #include "error.h"
 #include "json-reader.h"
+#include "irodori-request.h"
 #include "json.h"
 #include "regions.h"
 #include "wav.h"
@@ -82,7 +83,7 @@ void send_error(httplib::Response & res, const ApiError & e) {
     res.set_content(error_json(e), "application/json");
 }
 
-SpeechRequest read_speech_request(const std::string & body, const std::string & model_name) {
+SpeechRequest read_speech_request(const std::string & body, const std::string & model_name, bool compatible) {
     JsonValue json;
     try {
         json = parse_json(body);
@@ -92,6 +93,8 @@ SpeechRequest read_speech_request(const std::string & body, const std::string & 
     if (json.kind != JsonValue::Kind::Object) throw ApiError{400, "The body is not a JSON object. Send one JSON object.", "", ""};
     const std::vector<std::string> own = {"model", "input", "response_format", "stream_format"};
     SpeechRequest r;
+    if (compatible) r.max_seconds = irodori_request(json, model_name);
+    if (r.max_seconds) r.options.push_back({SPEECH_OPT_IRODORI_COMPATIBLE, true});
     std::vector<std::pair<std::string, const JsonValue *>> text;
     for (const auto & [name, value] : json.members) {
         if (value.kind == JsonValue::Kind::Null) continue;

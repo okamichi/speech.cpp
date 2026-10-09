@@ -98,9 +98,10 @@ struct speech_model {
         std::lock_guard<std::mutex> lock(voices_mutex_);
         return added_;
     }
-    void add(VoiceInfo voice) {
+    /** Publishes a prepared list after the engine has accepted the voice. */
+    void publish_voices(std::vector<VoiceInfo> & voices) {
         std::lock_guard<std::mutex> lock(voices_mutex_);
-        added_.push_back(std::move(voice));
+        added_.swap(voices);
     }
     /** Whether the model has a voice of `name`, compared with case. */
     bool has_voice(const std::string & name) const;
@@ -115,6 +116,7 @@ struct speech_result {
     speech_stop stop = SPEECH_STOP_COMPLETE;
     int64_t seed = -1;
     uint64_t samples = 0;
+    bool instructions_truncated = false;
     std::string text;
     std::vector<TimedText> segments, tokens;
     std::vector<std::string> languages;

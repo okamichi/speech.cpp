@@ -46,6 +46,8 @@ struct SpeechJob : Job {
     int64_t seed = -1;
     speech_stop stop = SPEECH_STOP_COMPLETE;
     size_t requests = 0;
+    uint64_t limit_samples = 0;
+    bool instructions_truncated = false;
     Clock::time_point first_audio;
 };
 
@@ -72,12 +74,13 @@ int on_progress(double, void * user_data) {
 void synthesize(const std::shared_ptr<SpeechJob> & job, Turns & turns, uint64_t ticket, const std::string & name) {
     run_in_turn(*job, turns, ticket, name, [&] {
         const std::optional<Spoken> spoken =
-            speak_text(job->served->get(), job->text, job->options, Split::Sentences, on_audio, on_progress, job.get(), job->cancellation);
+            speak_text(job->served->get(), job->text, job->options, job->limit_samples ? Split::Compatible : Split::Sentences, on_audio, on_progress, job.get(), job->cancellation, job->limit_samples);
         if (!spoken) return SPEECH_CANCELLED;
         std::lock_guard<std::mutex> lock(job->mutex);
         job->seed = spoken->seed;
         job->stop = spoken->stop;
         job->requests = spoken->requests;
+        job->instructions_truncated = spoken->instructions_truncated;
         return SPEECH_OK;
     }, [&](Clock::time_point started) {
         if (!job->samples) return std::string();
@@ -164,18 +167,25 @@ bool stream(SpeechJob & job, bool sse, httplib::DataSink & sink) {
 
 }  // namespace
 
-void answer_speech(std::shared_ptr<Served> served, const httplib::Request & req, httplib::Response & res) {
+void answer_speech(std::shared_ptr<Served> served, const httplib::Request & req, httplib::Response & res, bool compatible) {
     const auto info = served->info();
     const int sample_rate = speech_model_info_sample_rate(info.get());
     openai::SpeechRequest asked;
     try {
-        asked = openai::read_speech_request(req.body, speech_model_info_name(info.get()));
+        asked = openai::read_speech_request(req.body, speech_model_info_name(info.get()), compatible);
     } catch (const ApiError & e) {
         send_error(res, e);
         return;
     }
     auto job = std::make_shared<SpeechJob>();
     job->sample_rate = sample_rate;
+    if (asked.max_seconds) {
+        job->limit_samples = (uint64_t) std::floor(asked.max_seconds * sample_rate);
+        if (!job->limit_samples) {
+            send_error(res, {400, "max_seconds must allow at least one audio sample.", "irodori.max_seconds", "invalid_value"});
+            return;
+        }
+    }
     std::optional<int64_t> seed;
     std::string voice;
     for (const RequestOption & o : asked.options) {
@@ -220,6 +230,8 @@ void answer_speech(std::shared_ptr<Served> served, const httplib::Request & req,
     if (seed) res.set_header("X-Speech-Seed", std::to_string(*seed));
     if (whole) {
         res.set_header("X-Speech-Stop", speech_stop_name(job->stop));
+        res.set_header("X-Speech-Instructions-Truncated", job->instructions_truncated ? "true" : "false");
+        if (job->instructions_truncated) std::fprintf(stderr, "speech serve: instructions cut to the model's token limit\n");
         res.set_content(wav_header(job->pending.size(), sample_rate) + job->pending, "audio/wav");
         return;
     }

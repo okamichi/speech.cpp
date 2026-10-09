@@ -344,7 +344,8 @@ implementation:
 
 ```
 speech serve [MODEL [MODEL [MODEL]]] [--open] [--host 127.0.0.1] [--port 8080] [--cors-origin ORIGIN|*]...
-             [--add-voice NAME=FILE]... [--device NAME] [--threads N] [--no-warmup]
+             [--add-voice NAME=FILE]... [--voices-dir DIR] [--irodori-compatible]
+             [--device NAME] [--threads N] [--no-warmup]
 speech worker MODEL [--add-voice NAME=FILE]... [--device NAME] [--threads N] [--no-warmup]
 ```
 

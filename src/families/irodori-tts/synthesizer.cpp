@@ -144,7 +144,7 @@ size_t Synthesizer::synthesize(const Request & r, const Voice & voice, const Aud
     const TailCut & tail = r.tail ? *r.tail : tail_;
     const int steps = r.steps > 0 ? r.steps : sampler_.default_steps();
     duration_.check(r.length);
-    const Guidance guidance = sampler_.check(r.guidance ? *r.guidance : sampler_.guidance(), steps, reference, !caption.empty());
+    const Guidance guidance = sampler_.check(r.guidance ? *r.guidance : sampler_.guidance(), steps, reference, !caption.empty(), r.compatible);
     tail_.check(tail);
     Stats local;
     Stats & st = stats ? *stats : local;
@@ -166,14 +166,9 @@ size_t Synthesizer::synthesize(const Request & r, const Voice & voice, const Aud
         // The caption is tokenized as it is, after <s>, as the runtime's caption tokenizer takes it.
         std::vector<int32_t> caption_ids;
         if (!caption.empty()) {
-            caption_ids = tokenizer_.encode(caption);
+            caption_ids = tokenizer_.encode_caption(caption, model_->u32("irodori-tts.caption.max_tokens"), r.compatible,
+                                                    st.instructions_truncated);
             caption_tokens = (int) caption_ids.size();
-            const int most = (int) model_->u32("irodori-tts.caption.max_tokens");
-            if (caption_tokens > most) {
-                throw Error(Fault::OutOfRange, "the instructions are " + std::to_string(caption_tokens) + " tokens long and Irodori-TTS takes at most " +
-                                                   std::to_string(most) + "; shorten them",
-                            "instructions");
-            }
         }
         Graph g;
         ggml_tensor * state = text_.build(g, ids);

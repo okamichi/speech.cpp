@@ -77,6 +77,7 @@ add_library(irodoritts STATIC
     src/families/irodori-tts/text-normalizer.cpp
     src/families/irodori-tts/tokenizer.cpp
     src/families/irodori-tts/text-encoder.cpp
+    src/families/irodori-tts/t5gemma-encoder.cpp
     src/families/irodori-tts/loudness.cpp
     src/families/irodori-tts/codec.cpp
     src/families/irodori-tts/reference.cpp
@@ -230,6 +231,8 @@ add_executable(speech-cli
     tools/server/server.cpp
     tools/server/audio-speech.cpp
     tools/server/openai-api.cpp
+    tools/server/irodori-request.cpp
+    tools/server/voices.cpp
     tools/server/served-models.cpp
     tools/server/access.cpp
     tools/server/page.cpp
@@ -292,6 +295,14 @@ target_link_libraries(qwen3-decoder-check PRIVATE qwen3tts)
 add_executable(irodori-text-check checks/irodori-tts/irodori-text-check.cpp)
 target_include_directories(irodori-text-check PRIVATE checks)
 target_link_libraries(irodori-text-check PRIVATE irodoritts)
+
+add_executable(irodori-text-stage-check checks/irodori-tts/irodori-text-stage-check.cpp)
+target_include_directories(irodori-text-stage-check PRIVATE checks)
+target_link_libraries(irodori-text-stage-check PRIVATE irodoritts)
+
+add_executable(irodori-compat-check checks/irodori-tts/irodori-compat-check.cpp tools/common/json-reader.cpp)
+target_include_directories(irodori-compat-check PRIVATE checks tools/common)
+target_link_libraries(irodori-compat-check PRIVATE irodoritts)
 
 add_executable(irodori-window-check checks/irodori-tts/irodori-window-check.cpp)
 target_link_libraries(irodori-window-check PRIVATE irodoritts)

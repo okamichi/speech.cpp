@@ -5,6 +5,9 @@
 #include <stdexcept>
 #include <thread>
 
+#include "json.h"
+#include "openai-error.h"
+
 namespace server {
 
 namespace {
@@ -27,14 +30,40 @@ std::shared_ptr<const speech_model_info> Served::info() const {
 }
 
 void Served::add_voice(const std::string & name, const std::string & file) {
-    check(speech_voice_add(model_.get(), name.c_str(), file.c_str()));
-    std::shared_ptr<const speech_model_info> info = read_info(model_.get());
+    Turn turn(turns_);
+    turn.wait();
+    const auto owner = std::make_shared<ModelInfo>(nullptr, speech_model_info_free);
+    speech_model_info * raw = nullptr;
+    check(speech_voice_add_with_info(model_.get(), name.c_str(), file.c_str(), &raw));
+    owner->reset(raw);
+    std::shared_ptr<const speech_model_info> info(owner, raw);
     std::lock_guard<std::mutex> lock(mutex_);
     info_ = std::move(info);
 }
 
-ServedModels::ServedModels(Loading loading) : loading_(std::move(loading)) {
+ServedModels::ServedModels(Loading loading, const std::string & directory, bool compatible)
+    : loading_(std::move(loading)), voices_(directory), compatible_(compatible) {
+    if (compatible && directory.empty()) throw UsageError("--irodori-compatible needs --voices-dir DIR to retain registered voices");
     loading_.voices.clear();
+}
+
+std::pair<std::shared_ptr<Served>, std::string> ServedModels::upload_voice(const std::string & name, const std::string & bytes) {
+    std::lock_guard<std::mutex> operation(changing_);
+    auto served = of(SPEECH_TASK_SYNTHESIS);
+    if (!served) throw openai::ApiError{503, "No synthesis model is ready; load one before registering a voice.", "", "model_loading"};
+    std::string metadata = voices_.add(*served, name, bytes);
+    return {std::move(served), std::move(metadata)};
+}
+
+std::string ServedModels::health() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto & served = synthesis_.model;
+    const auto info = served ? served->info() : nullptr;
+    const std::string model = served ? "{\"id\":" + json_string(compatible_ ? "irodori-tts" : speech_model_info_name(info.get())) +
+                                      ",\"name\":" + json_string(speech_model_info_name(info.get())) + "}" : "null";
+    return "{\"status\":\"ok\",\"model\":" + model + ",\"runtime\":{\"loaded\":" + (served ? "true" : "false") +
+           ",\"loading\":" + (synthesis_.replacing.empty() ? "false" : "true") + ",\"checkpoint\":" +
+           (served ? json_string(served->path()) : "null") + "}}";
 }
 
 Loading ServedModels::loading_of(speech_task task) const {
@@ -43,7 +72,9 @@ Loading ServedModels::loading_of(speech_task task) const {
 
 void ServedModels::load_given(const std::string & path, const std::string & catalog_name) {
     const speech_task task = speech_model_info_task(file_info(path).get());
+    if (task == SPEECH_TASK_SYNTHESIS && compatible_) require_irodori_compatible(file_info(path).get());
     auto served = std::make_shared<Served>(load_model(path, loading_of(task)), path, catalog_name);
+    if (task == SPEECH_TASK_SYNTHESIS) voices_.restore(*served);
     std::lock_guard<std::mutex> lock(mutex_);
     Place & p = place(task);
     if (p.model) {
@@ -86,6 +117,13 @@ void ServedModels::cancel_replacing(speech_task task) {
 }
 
 std::shared_ptr<Served> ServedModels::replace(speech_task task, const std::string & path) {
+    std::lock_guard<std::mutex> operation(changing_);
+    try {
+        if (task == SPEECH_TASK_SYNTHESIS && compatible_) require_irodori_compatible(file_info(path).get());
+    } catch (...) {
+        cancel_replacing(task);
+        throw;
+    }
     std::weak_ptr<Served> old;
     std::string name;
     {
@@ -101,6 +139,7 @@ std::shared_ptr<Served> ServedModels::replace(speech_task task, const std::strin
     std::shared_ptr<Served> served;
     try {
         served = std::make_shared<Served>(load_model(path, loading_of(task)), path, name);
+        if (task == SPEECH_TASK_SYNTHESIS) voices_.restore(*served);
         if (speech_model_info_task(served->info().get()) != task) {
             throw Failure(speech_status_name(SPEECH_ERROR_MODEL_FILE), "", path + " is a speech " +
                           task_name(speech_model_info_task(served->info().get())) + " model, where the catalog says " + task_name(task));

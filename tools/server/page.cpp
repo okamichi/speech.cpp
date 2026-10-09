@@ -3,8 +3,6 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
-#include <random>
 #include <stdexcept>
 #include <thread>
 
@@ -90,25 +88,6 @@ private:
     ServedModels & models_;
     speech_task task_;
     bool loading_ = false;
-};
-
-/** A file in the system's temporary folder, removed with the object. */
-class TemporaryFile {
-public:
-    explicit TemporaryFile(const std::string & suffix) {
-        std::random_device device;
-        char name[40];
-        std::snprintf(name, sizeof name, "speech-%08x%08x", (unsigned) device(), (unsigned) device());
-        path_ = fs::temp_directory_path() / fs::u8path(name + suffix);
-    }
-    ~TemporaryFile() {
-        std::error_code ignored;
-        fs::remove(path_, ignored);
-    }
-    const fs::path & path() const { return path_; }
-
-private:
-    fs::path path_;
 };
 
 }  // namespace
@@ -244,6 +223,10 @@ void Page::load(const httplib::Request & req, httplib::Response & res) {
             send("{\"type\":\"loaded\",\"task\":\"" + std::string(task_name(task)) + "\",\"held\":" + served_json(*served) + "}");
         } catch (const Failure & e) {
             send(error_event(openai::library_error(e)));
+        } catch (const UsageError & e) {
+            send(error_event({400, e.what(), "model", "unsupported_value"}));
+        } catch (const std::exception & e) {
+            send(error_event({500, e.what(), "model", "io"}));
         }
         sink.done();
         return true;
@@ -251,8 +234,7 @@ void Page::load(const httplib::Request & req, httplib::Response & res) {
 }
 
 void Page::add_voice(const httplib::Request & req, httplib::Response & res) {
-    const auto served = models_.of(SPEECH_TASK_SYNTHESIS);
-    if (!served) {
+    if (!models_.of(SPEECH_TASK_SYNTHESIS)) {
         send_error(res, {409, "No speech synthesis model is in place to add a voice to; pick one first.", "", "model_not_found"});
         return;
     }
@@ -263,23 +245,16 @@ void Page::add_voice(const httplib::Request & req, httplib::Response & res) {
                          "missing_required_parameter"});
         return;
     }
-    const TemporaryFile recording(".wav");
-    {
-        std::ofstream out(recording.path(), std::ios::binary);
-        out.write(file->second.content.data(), (std::streamsize) file->second.content.size());
-        if (!out.flush()) {
-            send_error(res, {500, "cannot write the recording to " + recording.path().u8string(), "", "io"});
-            return;
-        }
-    }
     try {
-        served->add_voice(name->second.content, recording.path().u8string());
+        const auto uploaded = models_.upload_voice(name->second.content, file->second.content);
+        res.set_content("{\"held\":" + served_json(*uploaded.first) + "}", "application/json");
+    } catch (const openai::ApiError & e) {
+        send_error(res, e);
     } catch (const Failure & e) {
         send_error(res, openai::library_error(e));
-        return;
+    } catch (const std::exception & e) {
+        send_error(res, {500, e.what(), "file", "io"});
     }
-    std::fprintf(stderr, "speech serve: added the voice %s to %s\n", name->second.content.c_str(), speech_model_info_name(served->info().get()));
-    res.set_content("{\"held\":" + served_json(*served) + "}", "application/json");
 }
 
 void open_in_browser(const std::string & url) {

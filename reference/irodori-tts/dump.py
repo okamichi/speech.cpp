@@ -1,6 +1,6 @@
 """Runs the official Irodori-TTS on the CPU in float32 and saves the tensors the C++ port is checked against.
 
-usage: uv run python dump.py <mf|rf> <out dir> <text> (<reference.wav>... | --no-ref | --ref-embed f) [--seed n] [--steps n]
+usage: uv run python dump.py <mf|rf|anime|large> <out dir> <text> (<reference.wav>... | --no-ref | --ref-embed f) [--seed n] [--steps n]
                              [--seconds s | --duration-scale x] [--speed x] [--ref-normalize-db x | --no-normalize]
                              [request options]
 
@@ -83,6 +83,8 @@ parser.add_argument("model", choices=sorted(MODELS))
 parser.add_argument("out_dir")
 parser.add_argument("text")
 parser.add_argument("references", nargs="*")
+parser.add_argument("--model-dir", help="local full-precision model folder")
+parser.add_argument("--codec-dir", help="local folder containing weights.pth")
 parser.add_argument("--no-ref", action="store_true")
 parser.add_argument("--ref-embed")
 parser.add_argument("--ref-normalize-db", type=float)
@@ -114,16 +116,16 @@ options = {name: getattr(args, name) for name in OPTIONS if getattr(args, name) 
 if args.keep_tail:
     options["keep_tail"] = True
 # MeanFlow's sampler takes none of RF's options, which the runtime drops with a message.
-assert args.model == "rf" or not any(name in RF_OPTIONS for name in options), "the rf options are not mf's"
+assert args.model != "mf" or not any(name in RF_OPTIONS for name in options), "the rf options are not mf's"
 os.makedirs(args.out_dir, exist_ok=True)
 torch.set_grad_enabled(False)
 
 ir.SilentCipherWatermarker._load_backend = staticmethod(lambda **_: None)
 runtime = ir.InferenceRuntime.from_key(
     ir.RuntimeKey(
-        checkpoint=os.path.join(snapshot(MODELS[args.model]), "model.safetensors"),
+        checkpoint=os.path.join(args.model_dir if args.model_dir else snapshot(MODELS[args.model]), "model.safetensors"),
         model_device="cpu",
-        codec_repo=os.path.join(snapshot(CODEC), "weights.pth"),
+        codec_repo=os.path.join(args.codec_dir if args.codec_dir else snapshot(CODEC), "weights.pth"),
         codec_device="cpu",
     )
 )

@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <limits>
 #include <stdexcept>
+
+#include "error.h"
 
 #include "error.h"
 
@@ -28,16 +31,28 @@ size_t utf8_length(unsigned char c) {
 
 Tokenizer::Tokenizer(const ModelFile & m) {
     tokens_ = m.str_array("irodori-tts.tokenizer.tokens");
-    scores_ = m.f64_array("irodori-tts.tokenizer.scores");
+    bpe_ = m.str("irodori-tts.tokenizer.type") == "BPE";
+    if (bpe_) {
+        const auto merges = m.str_array("irodori-tts.tokenizer.merges");
+        for (size_t rank = 0; rank < merges.size(); rank++) {
+            const auto & pair = merges[rank];
+            const size_t split = pair.find(' ');
+            if (split == std::string::npos || !ranks_.emplace(pair, rank).second) {
+                throw Error(Fault::File, m.path() + ": tokenizer merge is invalid or duplicated; " + m.remedy());
+            }
+        }
+    } else {
+        scores_ = m.f64_array("irodori-tts.tokenizer.scores");
+    }
     added_ = m.i32_array("irodori-tts.tokenizer.added_ids");
     bos_ = (int32_t) m.u32("irodori-tts.tokenizer.bos_id");
     unknown_ = (int32_t) m.u32("irodori-tts.tokenizer.unknown_id");
-    if (scores_.size() != tokens_.size()) throw Error(Fault::File, m.path() + ": the tokenizer does not have a score for each token");
+    if (!bpe_ && scores_.size() != tokens_.size()) throw Error(Fault::File, m.path() + ": the tokenizer does not have a score for each token");
     double lowest = 0;
     for (size_t i = 0; i < tokens_.size(); i++) {
         ids_.emplace(tokens_[i], (int32_t) i);
         longest_ = std::max(longest_, tokens_[i].size());
-        lowest = std::min(lowest, scores_[i]);
+        if (!bpe_) lowest = std::min(lowest, scores_[i]);
     }
     unknown_score_ = lowest - kUnknownPenalty;
     for (int b = 0; b < 256; b++) {
@@ -53,7 +68,10 @@ std::vector<int32_t> Tokenizer::encode(const std::string & text) const {
     std::vector<int32_t> ids = {bos_};
     std::string piece;
     auto flush = [&]() {
-        if (!piece.empty()) encode_piece(piece, ids);
+        if (!piece.empty()) {
+            if (bpe_) encode_bpe(piece, ids);
+            else encode_piece(piece, ids);
+        }
         piece.clear();
     };
     for (size_t i = 0; i < text.size();) {
@@ -76,6 +94,33 @@ std::vector<int32_t> Tokenizer::encode(const std::string & text) const {
     }
     flush();
     return ids;
+}
+
+void Tokenizer::encode_bpe(const std::string & text, std::vector<int32_t> & ids) const {
+    std::vector<std::string> pieces;
+    for (size_t i = 0; i < text.size();) {
+        const size_t length = utf8_length((unsigned char) text[i]);
+        pieces.push_back(text.substr(i, length));
+        i += length;
+    }
+    while (pieces.size() > 1) {
+        size_t best = std::numeric_limits<size_t>::max(), index = 0;
+        for (size_t i = 0; i + 1 < pieces.size(); i++) {
+            const auto rank = ranks_.find(pieces[i] + " " + pieces[i + 1]);
+            if (rank != ranks_.end() && rank->second < best) {
+                best = rank->second;
+                index = i;
+            }
+        }
+        if (best == std::numeric_limits<size_t>::max()) break;
+        pieces[index] += pieces[index + 1];
+        pieces.erase(pieces.begin() + (ptrdiff_t) index + 1);
+    }
+    for (const auto & piece : pieces) {
+        const auto token = ids_.find(piece);
+        if (token != ids_.end()) ids.push_back(token->second);
+        else for (unsigned char byte : piece) ids.push_back(bytes_[byte]);
+    }
 }
 
 void Tokenizer::encode_piece(const std::string & s, std::vector<int32_t> & ids) const {
@@ -125,6 +170,18 @@ void Tokenizer::encode_piece(const std::string & s, std::vector<int32_t> & ids) 
         }
         for (unsigned char b : it->first) ids.push_back(bytes_[b]);
     }
+}
+
+std::vector<int32_t> Tokenizer::encode_caption(const std::string & text, size_t limit, bool compatible, bool & truncated) const {
+    auto ids = text.empty() ? std::vector<int32_t>{} : encode(text);
+    truncated = ids.size() > limit;
+    if (truncated && !compatible) {
+        throw Error(Fault::OutOfRange, "the instructions are " + std::to_string(ids.size()) +
+                                          " tokens long and Irodori-TTS takes at most " + std::to_string(limit) + "; shorten them",
+                    "instructions");
+    }
+    if (truncated) ids.resize(limit);
+    return ids;
 }
 
 }  // namespace irodori

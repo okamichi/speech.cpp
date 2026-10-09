@@ -91,7 +91,7 @@ A synthesis request needs a `voice`.
 |---|---|
 | `speech tts` | `--add-voice NAME=FILE`, repeatable |
 | `speech worker` | `--add-voice NAME=FILE`, or the request `add_voice` |
-| `speech serve` | `--add-voice NAME=FILE`, or a recording on the page |
+| `speech serve` | `--add-voice NAME=FILE`, a recording on the page, or [the Irodori voice API](server.md#reference-voices); `--voices-dir DIR` retains uploads |
 | C API | `speech_voice_add()` |
 
 A voice's name is case-sensitive, and may be neither a voice of the model nor `none`.

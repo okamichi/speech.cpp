@@ -32,6 +32,7 @@ struct SpeechRequest {
     std::string input;
     std::string format = "wav";
     bool sse = false;
+    double max_seconds = 0;
     /** The options of the vocabulary that the body sets, by their names. */
     std::vector<RequestOption> options;
 };
@@ -42,7 +43,7 @@ struct SpeechRequest {
  * and a member set to null counts as left out. The model's name, which "model" may give, is the one /v1/models
  * lists. Anything it cannot read throws an ApiError; the values of the options are checked by the library's setters.
  */
-SpeechRequest read_speech_request(const std::string & body, const std::string & model_name);
+SpeechRequest read_speech_request(const std::string & body, const std::string & model_name, bool compatible = false);
 
 /** One part of a multipart/form-data body: a field, or a file when it has a filename. */
 struct FormPart {

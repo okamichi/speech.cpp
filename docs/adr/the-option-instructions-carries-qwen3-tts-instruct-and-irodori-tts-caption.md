@@ -37,7 +37,10 @@ requests carry none, and they should not pay for it.
   the caption's encoder does not run, the DiT gets no caption keys, and RF's batch has no caption branch, so the graph
   is the one a file without the caption builds. A caption that strips to nothing is no caption. A caption past
   `irodori-tts.caption.max_tokens` is refused as `out_of_range`, naming `instructions`, where the runtime cuts it, and
-  `cfg_scale_instructions` without a caption is refused but at its default and 0.
+  `cfg_scale_instructions` without a caption is refused but at its default and 0. An RF caller explicitly choosing
+  `irodori_compatible` instead gets the official token-prefix truncation and inactive guidance handling, because
+  the bridge accepts captions longer than the model's limit and sends guidance even without a caption. The result
+  reports truncation so this choice is observable.
 
 The alternatives were turned down:
 

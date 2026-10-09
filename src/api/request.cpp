@@ -173,6 +173,8 @@ public:
     bool stopped() override { return stop_ || request_.cancelled.load(); }
 
     uint64_t samples() const { return samples_; }
+    void instructions_truncated() override { truncated_ = true; }
+    bool truncated() const { return truncated_; }
     /** Whether the run has passed audio or progress to the caller, which only work does. */
     bool passed() const { return passed_; }
 
@@ -180,7 +182,7 @@ private:
     speech_request & request_;
     speech_audio_callback on_audio_;
     void * user_data_;
-    bool stop_ = false, passed_ = false;
+    bool stop_ = false, passed_ = false, truncated_ = false;
     uint64_t samples_ = 0;
 };
 
@@ -385,6 +387,7 @@ speech_status speech_synthesize(speech_request * request, speech_audio_callback 
         });
         if (run.stopped()) result->stop = SPEECH_STOP_CANCELLED;
         result->samples = run.samples();
+        result->instructions_truncated = run.truncated();
         const speech_status status = result->stop == SPEECH_STOP_CANCELLED ? SPEECH_CANCELLED : SPEECH_OK;
         request->result = std::move(result);
         return status;
@@ -420,6 +423,10 @@ const speech_result * speech_request_result(const speech_request * request) {
 
 speech_stop speech_result_stop(const speech_result * result) {
     return result ? result->stop : SPEECH_STOP_COMPLETE;
+}
+
+int speech_result_instructions_truncated(const speech_result * result) {
+    return result && result->instructions_truncated;
 }
 
 int64_t speech_result_seed(const speech_result * result) {

@@ -77,7 +77,7 @@ public:
      * others. Returns the guidance as the runtime runs it, which has no speaker's scale without a reference and no
      * caption's without a caption.
      */
-    Guidance check(const Guidance & g, int steps, bool reference = true, bool caption = false) const;
+    Guidance check(const Guidance & g, int steps, bool reference = true, bool caption = false, bool compatible = false) const;
 
     /** The times the sampler visits, steps + 1 of them, computed in float32 as torch computes them. */
     std::vector<float> schedule(int steps, float sway = 0) const;

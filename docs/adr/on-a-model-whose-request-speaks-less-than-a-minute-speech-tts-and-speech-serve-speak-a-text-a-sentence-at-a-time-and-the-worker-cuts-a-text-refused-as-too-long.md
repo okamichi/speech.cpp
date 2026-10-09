@@ -38,7 +38,9 @@ seeds 1 to 3, silence at or under -40 dBFS, Apple M5, 2026-10-08).
   sentence is cut after its commas (、､，； and , ; where a space or the end follows), or at its spaces where it has
   none, and each piece is spoken the same way in turn. A piece with no comma or space that is still refused fails the
   whole text, naming the piece and the library's reason: a cut inside a word reads wrongly, and ordinary text has no
-  such run.
+  such run. HTTP Irodori compatibility requests explicitly allow Unicode-boundary bisection of a refused piece:
+  the bridge permits a 500-codepoint run without punctuation, and refusing it would break that caller's contract.
+  This can change pronunciation and is restricted to that splitting policy.
 - **Every request takes the same model, voice and options, and one seed**: the seed given, or the one the first
   request drew, which the result reports, so that the seed repeats the whole text. The first request that stops other
   than complete ends the text with its stop. A cancel stops the request under way, and no other is made.

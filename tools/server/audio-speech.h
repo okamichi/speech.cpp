@@ -17,6 +17,6 @@ namespace server {
  * any audio, the speech as wav, pcm or SSE events, and the request stopped for a client that goes away while it waits or
  * runs.
  */
-void answer_speech(std::shared_ptr<Served> served, const httplib::Request & req, httplib::Response & res);
+void answer_speech(std::shared_ptr<Served> served, const httplib::Request & req, httplib::Response & res, bool compatible = false);
 
 }  // namespace server

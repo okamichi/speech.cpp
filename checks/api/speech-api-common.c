@@ -70,7 +70,7 @@ int check_library(void) {
                                      "rescale_k", "rescale_sigma", "speaker_uncond_mode", "sway_coeff", "keep_tail",
                                      "tail_window_size", "tail_std_threshold", "tail_mean_threshold", "speaker_kv_scale",
                                      "speaker_kv_min_t", "speaker_kv_max_layers", "cfg_scale_instructions", "threshold",
-                                     "min_speech_duration_ms", "min_silence_duration_ms", "speech_pad_ms", "max_speech_duration_s"};
+                                     "min_speech_duration_ms", "min_silence_duration_ms", "speech_pad_ms", "max_speech_duration_s", "irodori_compatible"};
     if (speech_option_count() != sizeof options / sizeof options[0]) {
         fprintf(stderr, "FAIL: the library knows %zu options\n", speech_option_count());
         return 1;

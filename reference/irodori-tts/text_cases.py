@@ -1,6 +1,6 @@
 """Writes the cases the C++ text normalization, tokenizer and text encoder are checked against.
 
-usage: uv run python text_cases.py <prompts.json> <out dir>
+usage: uv run python text_cases.py <prompts.json> <out dir> [--model mf|rf|anime|large] [--model-dir DIR]
 
   text-cases.tsv     one line per text: the text's UTF-8 in hex, a tab, the official normalize_text() of it
                      (stripped, as the runtime does) in hex, a tab, and the ids the runtime gives it with <s>
@@ -14,7 +14,7 @@ in a sentence and all together.
 
 import json
 import os
-import sys
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -28,10 +28,16 @@ from irodori_tts.text_normalization import normalize_text
 from irodori_tts.tokenizer import PretrainedTextTokenizer
 from pins import MODELS, snapshot
 
-prompts_path, out_dir = sys.argv[1:3]
+parser = argparse.ArgumentParser()
+parser.add_argument("prompts")
+parser.add_argument("out_dir")
+parser.add_argument("--model", choices=sorted(MODELS), default="mf")
+parser.add_argument("--model-dir")
+args = parser.parse_args()
+prompts_path, out_dir = args.prompts, args.out_dir
 os.makedirs(out_dir, exist_ok=True)
 torch.set_grad_enabled(False)
-model_dir = snapshot(MODELS["mf"])
+model_dir = args.model_dir if args.model_dir else snapshot(MODELS[args.model])
 tokenizer = PretrainedTextTokenizer.from_pretrained(os.path.join(model_dir, "tokenizer"), add_bos=True,
                                                     local_files_only=True)
 

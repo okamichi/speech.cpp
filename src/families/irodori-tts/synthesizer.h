@@ -56,6 +56,7 @@ struct Request {
     std::string text;
     /** The caption that describes the voice and the way of speaking (VoiceDesign); one that strips to nothing is none. */
     std::string caption;
+    bool compatible = false;
     uint64_t seed = 0;
     /** The sampler's steps; 0 takes the model's default (4 for MeanFlow, 40 for RF). */
     int steps = 0;
@@ -80,6 +81,7 @@ struct Stats {
     double text = 0, sampling = 0, first_audio = 0, codec = 0;
     int tokens = 0, frames = 0;
     size_t samples = 0;
+    bool instructions_truncated = false;
 };
 
 /**

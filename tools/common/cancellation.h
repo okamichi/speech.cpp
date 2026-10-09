@@ -18,10 +18,16 @@ public:
             if (cancelled_) return SPEECH_CANCELLED;
             current_ = request;
         }
-        const speech_status status = call();
-        std::lock_guard<std::mutex> lock(mutex_);
-        current_ = nullptr;
-        return status;
+        try {
+            const speech_status status = call();
+            std::lock_guard<std::mutex> lock(mutex_);
+            current_ = nullptr;
+            return status;
+        } catch (...) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            current_ = nullptr;
+            throw;
+        }
     }
 
     void cancel() {

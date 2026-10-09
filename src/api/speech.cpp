@@ -100,6 +100,7 @@ const OptionName vocabulary[] = {
     {"min_silence_duration_ms", SPEECH_TYPE_INT},
     {"speech_pad_ms", SPEECH_TYPE_INT},
     {"max_speech_duration_s", SPEECH_TYPE_FLOAT},
+    {"irodori_compatible", SPEECH_TYPE_BOOL},
 };
 constexpr size_t kOptions = sizeof vocabulary / sizeof vocabulary[0];
 
@@ -456,6 +457,10 @@ speech_status speech_quantize(const char * model_path, const char * type, const 
 }
 
 speech_status speech_voice_add(speech_model * model, const char * name, const char * path) {
+    return speech_voice_add_with_info(model, name, path, nullptr);
+}
+
+speech_status speech_voice_add_with_info(speech_model * model, const char * name, const char * path, speech_model_info ** info) {
     return guarded([&] {
         require(model, "model");
         require(name, "name", "name");
@@ -477,8 +482,13 @@ speech_status speech_voice_add(speech_model * model, const char * name, const ch
                                                               " have; give the voice another name",
                            "name");
         }
+        std::vector<VoiceInfo> added = model->added();
+        added.push_back({name, "", "", ""});
+        std::unique_ptr<speech_model_info> snapshot;
+        if (info) snapshot.reset(make_info(model->file, added, model->device, model->threads));
         naming("path", [&] { model->engine->add_voice(name, path); });
-        model->add({name, "", "", ""});
+        model->publish_voices(added);
+        if (info) *info = snapshot.release();
         return SPEECH_OK;
     });
 }

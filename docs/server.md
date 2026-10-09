@@ -5,7 +5,8 @@ with a subset of OpenAI's audio API and its Realtime transcription, and a page o
 
 ```
 speech serve [MODEL [MODEL [MODEL]]] [--open] [--host 127.0.0.1] [--port 8080] [--cors-origin ORIGIN|*]...
-             [--add-voice NAME=FILE]... [--device NAME] [--threads N] [--no-warmup]
+             [--add-voice NAME=FILE]... [--voices-dir DIR] [--irodori-compatible]
+             [--device NAME] [--threads N] [--no-warmup]
 ```
 
 ```sh
@@ -14,6 +15,10 @@ speech serve qwen3-tts-0.6b qwen3-asr-0.6b            # speech and transcription
 speech serve reazonspeech-v2 silero-vad               # transcriptions, also by the regions where someone speaks
 speech serve irodori-tts-mf --add-voice me=me.voice.gguf --cors-origin http://localhost:5173
 ```
+
+The local `run-*.sh` scripts start the Metal server on port 8088. Pass
+`--irodori-compatible --voices-dir ./voices` to a script for Irodori compatibility; the script warns on stderr
+if either option is missing. `--voices-dir` can name another folder.
 
 The server holds at most one model of each task: synthesis, recognition and detection (Silero VAD), whose model
 transcriptions with `chunking_strategy` and Realtime sessions with `server_vad` use. It loads the models given, listens once they are ready, and logs to stderr.
@@ -25,13 +30,15 @@ transcriptions with `chunking_strategy` and Realtime sessions with `server_vad` 
 | `--open` | open the page in the browser once the server listens; without a MODEL the server starts with none |
 | `--cors-origin ORIGIN` | an origin a web page may call the server from, such as `http://localhost:5173`, or `*` for any; repeatable. A web page of any other origin is refused (403 `origin_not_allowed`); curl and scripts send no origin and are not |
 | `--add-voice NAME=FILE` | add a voice to the synthesis model |
+| `--voices-dir DIR` | retain uploaded reference WAV files here and restore them when a synthesis model loads; creates the folder if needed |
+| `--irodori-compatible` | accept the Irodori bridge request format and voice endpoints below; requires an Irodori RF model with captions, voice `none`, and `--voices-dir` |
 | `--device`, `--threads`, `--no-warmup` | as for the worker, for the synthesis and recognition models the server loads, the page's included. A detection model runs on the CPU with one thread |
 
 ## Endpoints
 
 | Endpoint | What it does |
 |---|---|
-| `GET /health` | answers `{"status":"ok"}` |
+| `GET /health` | returns `status: "ok"`, the synthesis `model`, and `runtime` with `loaded`, `loading` and `checkpoint` (its GGUF path, or null) |
 | `GET /v1/models` | lists the models held, synthesis, recognition and detection in that order, as OpenAI's model objects whose `id` is the model's name, with `speech`, the model information ([c-api.md](c-api.md#model-information-as-json)) |
 | `GET /v1/models/{id}` | one model; another id is a 404 (`model_not_found`) |
 | `POST /v1/audio/speech` | speaks a text, as [OpenAI's create speech](https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create) does |
@@ -106,6 +113,68 @@ with requests.post("http://127.0.0.1:8080/v1/audio/speech",
         for chunk in r.iter_content(chunk_size=None):
             w.writeframes(chunk)
 ```
+
+## Irodori bridge compatibility
+
+Start with an RF model that supports captions and reference voices:
+
+```sh
+build/speech serve models/Irodori-TTS-v4-Large.gguf --device MTL0 \
+    --irodori-compatible --voices-dir ./voices --host 127.0.0.1 --port 8080
+```
+
+The bridge can keep its Irodori provider and use `http://127.0.0.1:8080`. Speech requests accept the model alias
+`irodori-tts` and an `irodori` object:
+
+```json
+{"model":"irodori-tts","input":"準備はできました。","voice":"none","response_format":"wav","speed":1,
+ "irodori":{"caption":"落ち着いた声","seed":1520596899881326291,"num_steps":20,"max_seconds":120,
+            "chunking_enabled":false,"cfg_scale_text":3,"cfg_scale_caption":3,"cfg_scale_speaker":5}}
+```
+
+`caption`, `num_steps` and `cfg_scale_caption` map to `instructions`, `steps` and `cfg_scale_instructions`.
+`seed`, `cfg_scale_text` and `cfg_scale_speaker` keep their names. Do not give an option both here and at the top
+level. Unknown members are refused; null is absent. A nested seed must be an integer from 0 through 2^63−1 and is
+reduced modulo 2^53; `X-Speech-Seed` returns this effective seed. Top-level seeds keep their usual range.
+
+With an `irodori` object, `max_seconds` caps the whole output, including pauses, at 120 seconds by default. It must
+be positive and at most 120. Reaching it returns a valid WAV with `X-Speech-Stop: max_seconds`.
+`chunking_enabled` accepts either boolean: texts are split to fit the model in either case. A piece too long to fit
+without punctuation or spaces is split at Unicode boundaries. This differs from Irodori-TTS-Server's whole-text
+synthesis; joins retain speech.cpp's pause of at least 0.9 seconds, counting existing silence.
+
+Captions are stripped and truncated at the model's token limit, as in the official runtime. WAV responses report
+`X-Speech-Instructions-Truncated: true` when this happens, and the server logs it. Caption guidance with an empty
+caption, and speaker guidance with `voice: "none"`, are accepted and have no effect. Native requests keep their
+usual validation unless they explicitly set `irodori_compatible: true`.
+
+### Reference voices
+
+With `--irodori-compatible`, `GET /v1/audio/voices` returns:
+
+```json
+{"object":"list","data":[{"id":"none","object":"voice","no_ref":true}]}
+```
+
+Register a WAV recording with `POST /v1/audio/voices`:
+
+```sh
+curl http://127.0.0.1:8080/v1/audio/voices -F file=@reference.wav -F voice_id=narrator
+```
+
+Success is HTTP 201 with `id`, `object: "voice_file"`, `filename`, `bytes` and `created_at` (Unix seconds).
+The ID defaults to the filename without its extension. IDs use ASCII letters, digits, underscores and hyphens;
+`none`, `no_ref`, `no-ref`, `null` and `text-only` are reserved, regardless of case. Duplicate IDs return 409.
+Recordings must be WAV files supported by the model; convert other formats first. Replacements and deletion over
+HTTP are not provided.
+
+Uploads are stored as `ID.wav` in `--voices-dir`. They appear in both voice listings and survive restarts and model
+changes; a model encodes them when it loads. A corrupt or incompatible recording fails the load with its path.
+The page's uploads also persist when this folder is configured. `--add-voice` alone remains temporary and must not
+collide with a stored ID. Stop the server before editing or removing stored recordings.
+
+Matching requests are repeatable on the same speech.cpp device, but their audio does not match the Python server's
+waveform or necessarily its voice quality. Different 64-bit seeds can map to the same effective seed.
 
 ## Transcriptions
 

@@ -82,7 +82,8 @@ public:
         http.set_logger([](const httplib::Request & req, const httplib::Response & res) {
             std::fprintf(stderr, "%s %s %s %d\n", req.remote_addr.c_str(), req.method.c_str(), req.path.c_str(), res.status);
         });
-        http.Get("/health", [](const httplib::Request &, httplib::Response & res) { res.set_content("{\"status\":\"ok\"}", "application/json"); });
+        http.Get("/health", [this](const httplib::Request &, httplib::Response & res) { res.set_content(models_.health(), "application/json"); });
+        if (models_.compatible()) route_voices(http, models_);
         http.Get("/v1/models", [this](const httplib::Request &, httplib::Response & res) {
             std::string data;
             for (const auto & served : models_.all()) data += (data.empty() ? "" : ",") + model_json(*served);
@@ -98,7 +99,7 @@ public:
             send_error(res, {404, "The model " + json_string(req.matches[1]) + " does not exist.", "model", "model_not_found"});
         });
         http.Post("/v1/audio/speech", [this](const httplib::Request & req, httplib::Response & res) {
-            if (auto served = held(SPEECH_TASK_SYNTHESIS, req, res)) answer_speech(std::move(served), req, res);
+            if (auto served = held(SPEECH_TASK_SYNTHESIS, req, res)) answer_speech(std::move(served), req, res, models_.compatible());
         });
         http.Post("/v1/audio/transcriptions", [this](const httplib::Request & req, httplib::Response & res) {
             if (auto served = held(SPEECH_TASK_RECOGNITION, req, res)) transcription(std::move(served), req, res);
@@ -153,7 +154,7 @@ private:
         const bool allowed = access_.cross_origin_allowed(origin);
         if (allowed) {
             res.set_header("Access-Control-Allow-Origin", access_.any_origin() ? "*" : origin);
-            res.set_header("Access-Control-Expose-Headers", "X-Sample-Rate, X-Speech-Seed, X-Speech-Stop");
+            res.set_header("Access-Control-Expose-Headers", "X-Sample-Rate, X-Speech-Seed, X-Speech-Stop, X-Speech-Instructions-Truncated");
             if (!access_.any_origin()) res.set_header("Vary", "Origin");
         }
         if (req.method != "OPTIONS") return httplib::Server::HandlerResponse::Unhandled;
@@ -277,9 +278,12 @@ int run_serve(const CommandLine & line, FILE *) {
         throw UsageError(no_model_message("serve MODEL [options]", ModelKind::Any) + "\nOr give --open, and pick the models on the page.");
     }
     const Loading loading = line.loading(true);
-    ServedModels models(loading);
+    ServedModels models(loading, line.value("--voices-dir").value_or(""), line.has("--irodori-compatible"));
     for (const std::string & argument : line.args) {
         models.load_given(model_file(argument), is_model_path(argument) ? "" : choice_name(find_model(argument)));
+    }
+    if (models.compatible() && !models.of(SPEECH_TASK_SYNTHESIS)) {
+        throw UsageError("--irodori-compatible needs an Irodori synthesis model on the command line");
     }
     if (!loading.voices.empty()) {
         const auto synthesis = models.of(SPEECH_TASK_SYNTHESIS);
@@ -338,6 +342,8 @@ Command serve_command() {
         {"--port", "N", false, "the port, 8080 unless given; 0 for any free one"},
         {"--open", "", false, "open the page in the browser once the server listens"},
         {"--cors-origin", "ORIGIN|*", true, "an origin a web page may call the server from, or * for any"},
+        {"--irodori-compatible", "", false, "accept the Irodori bridge API; requires an RF model and --voices-dir"},
+        {"--voices-dir", "DIR", false, "save uploaded WAV voices and restore them when loading a synthesis model"},
         add_voice_flag(),
         device_flag("auto (the first GPU, or the CPU without one), gpu, cpu or a name `speech devices` lists; a detection model "
                     "runs on the CPU"),

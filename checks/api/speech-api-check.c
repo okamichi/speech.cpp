@@ -106,7 +106,21 @@ static int check_voices(speech_model * model, const char * model_path, char ** n
     speech_model_info_free(info);
     for (size_t i = 0; i < n_voices; i++) {
         const double start = now_seconds();
-        if (speech_voice_add(model, names[i], paths[i]) != SPEECH_OK) return fail("speech_voice_add");
+        speech_model_info * added = NULL;
+        if (speech_voice_add_with_info(model, names[i], paths[i], &added) != SPEECH_OK) return fail("speech_voice_add_with_info");
+        if (speech_model_info_voice_count(added) != own + i + 1 ||
+            strcmp(speech_model_info_voice_name(added, own + i), names[i])) {
+            speech_model_info_free(added);
+            return fail("the atomic voice snapshot");
+        }
+        speech_model_info * unchanged = added;
+        const speech_status duplicate = speech_voice_add_with_info(model, names[i], paths[i], &added);
+        if (duplicate != SPEECH_ERROR_INVALID_ARGUMENT || added != unchanged ||
+            speech_model_info_voice_count(added) != own + i + 1) {
+            speech_model_info_free(unchanged);
+            return fail("a failed voice registration changed its snapshot");
+        }
+        speech_model_info_free(added);
         printf("added the voice %s from %s in %.3f s\n", names[i], paths[i], now_seconds() - start);
     }
     int ok = 1;

@@ -37,6 +37,7 @@ public:
     speech_stop speak(const std::string & text, const RequestValues & values, Run & run) override {
         irodori::Request r;
         r.text = text;
+        r.compatible = values.has(SPEECH_OPT_IRODORI_COMPATIBLE) && values.boolean(SPEECH_OPT_IRODORI_COMPATIBLE);
         if (values.has(SPEECH_OPT_INSTRUCTIONS)) r.caption = values.string(SPEECH_OPT_INSTRUCTIONS);
         r.seed = (uint64_t) values.integer(SPEECH_OPT_SEED);
         r.steps = (int) values.integer(SPEECH_OPT_STEPS);
@@ -51,7 +52,9 @@ public:
         r.tail->std_threshold = (float) values.number(SPEECH_OPT_TAIL_STD_THRESHOLD);
         r.tail->mean_threshold = (float) values.number(SPEECH_OPT_TAIL_MEAN_THRESHOLD);
         r.progress = [&](double done) { return run.progress(done); };
-        synth_.synthesize(r, voices_.at(values.string(SPEECH_OPT_VOICE)), [&](const float * samples, size_t n) { return run.audio(samples, n); });
+        irodori::Stats stats;
+        synth_.synthesize(r, voices_.at(values.string(SPEECH_OPT_VOICE)), [&](const float * samples, size_t n) { return run.audio(samples, n); }, &stats);
+        if (stats.instructions_truncated) run.instructions_truncated();
         return SPEECH_STOP_COMPLETE;
     }
 
@@ -210,6 +213,7 @@ FamilyInfo describe_irodori_tts(const std::shared_ptr<const ModelFile> & file) {
         });
     }
     if (rf && caption) info.options.push_back(float32({SPEECH_OPT_CFG_SCALE_INSTRUCTIONS, false, true, (double) m.f32(s + "cfg_caption"), 0, INFINITY}));
+    if (rf && caption) info.options.push_back({SPEECH_OPT_IRODORI_COMPATIBLE, false, true, false});
     const auto counter = std::make_shared<Lazy<TokenCounter>>(file);
     info.count_tokens = [counter](const std::string & text) { return counter->get().count(text); };
     return info;

@@ -5,11 +5,11 @@
 namespace irodori {
 
 /**
- * Layout 2 of an Irodori-TTS model file, which reference/irodori-tts/convert.py writes: the tokenizer, ModernBERT-ja
+ * Layout 3 of an Irodori-TTS model file, which reference/irodori-tts/convert.py writes: the Unigram or BPE tokenizer, ModernBERT-ja or T5Gemma2
  * and the projectors of the text and the caption, the speaker encoder, the duration predictor with its null speaker,
  * the DiT with the caption's keys and values and the DACVAE codec, every key of irodori-tts.* and speech.* that the
  * family reads, and the tensors the keys call for. A file of layout 1 reads as one of layout 2 without the null speaker
- * and the caption's encoder, which speaks with a reference and no caption.
+ * and the caption's encoder, which speaks with a reference and no caption. Layout 2 reads as ModernBERT-ja with Unigram.
  */
 extern const Layout model_layout;
 

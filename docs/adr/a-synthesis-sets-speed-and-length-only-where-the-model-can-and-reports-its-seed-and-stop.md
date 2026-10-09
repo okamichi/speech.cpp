@@ -35,7 +35,9 @@ the model finished from one a limit cut, and to repeat a request whose audio it 
   shortest length is raised to it, as the runtime raises it, which adds silence and loses nothing.
 - **Qwen3-TTS takes `max_seconds`**, the longest the speech may be, and stops at its file's limit of frames otherwise.
   Its cache grows with the request, so that a sentence costs the memory of its own length. Irodori-TTS does not take
-  `max_seconds`, since it fixes the length before it makes the speech.
+  `max_seconds`, since it fixes the length before it makes the speech. The HTTP Irodori compatibility mode alone
+  accepts a whole-response cap and stops decoded output, including sentence pauses, at that bound. This preserves
+  the bridge's bounded WAV contract without pretending to change the model's predicted latent length.
 - **A synthesis reports its seed, its length in samples and why it stopped**: complete, at the request's `max_seconds`,
   at the model's limit, or cancelled. A request without a seed gets one drawn from 0 to 2^53 − 1, the integers a JSON
   reader in JavaScript holds exactly, so that a reported seed repeats the audio on the same device.

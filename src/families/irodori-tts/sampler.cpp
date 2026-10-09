@@ -50,14 +50,14 @@ Sampler::~Sampler() {
     if (allocr_) ggml_gallocr_free(allocr_);
 }
 
-Guidance Sampler::check(const Guidance & g, int steps, bool reference, bool caption) const {
-    if (!caption && g.caption != guidance_.caption && g.caption != 0) {
+Guidance Sampler::check(const Guidance & g, int steps, bool reference, bool caption, bool compatible) const {
+    if (!compatible && !caption && g.caption != guidance_.caption && g.caption != 0) {
         throw Error(Fault::InvalidArgument, "a request without instructions has no caption to guide by, so cfg_scale_instructions has no effect; leave it out",
                     "cfg_scale_instructions");
     }
     if (!reference) {
         // Without a reference the runtime turns the speaker's guidance off and ignores what would steer it.
-        const char * idle = g.speaker != guidance_.speaker && g.speaker != 0 ? "cfg_scale_speaker"
+        const char * idle = !compatible && g.speaker != guidance_.speaker && g.speaker != 0 ? "cfg_scale_speaker"
                             : g.speaker_noise                                 ? "speaker_uncond_mode"
                             : g.speaker_kv_scale != 1                         ? "speaker_kv_scale"
                                                                               : nullptr;

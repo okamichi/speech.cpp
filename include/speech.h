@@ -62,7 +62,7 @@ extern "C" {
  * version and a minor version of m or more. Version 3.0 is first released with speech.cpp 0.7.0, the option prompt
  * included, and a declaration added since says the version that added it.
  */
-#define SPEECH_API_VERSION_MINOR 1
+#define SPEECH_API_VERSION_MINOR 2
 
 /** The SPEECH_API_VERSION_MAJOR the library was built with, for a caller that loads it at run time. */
 SPEECH_API int speech_api_version_major(void);
@@ -394,7 +394,12 @@ typedef enum speech_option {
      * model's least (98 ms for Silero VAD), the next region beginning where that silence ended, or, without one, at the
      * chunk that reaches the limit. Without it a region has no limit. Added in 3.1.
      */
-    SPEECH_OPT_MAX_SPEECH_DURATION_S = 43
+    SPEECH_OPT_MAX_SPEECH_DURATION_S = 43,
+    /**
+     * "irodori_compatible", a boolean: use the official caption token limit and disable guidance for absent caption
+     * and speaker conditions. False keeps strict validation. Added in 3.2.
+     */
+    SPEECH_OPT_IRODORI_COMPATIBLE = 44
 } speech_option;
 
 /** The type of an option's values, which names the setter that takes them. */
@@ -785,6 +790,13 @@ SPEECH_API speech_status speech_model_get_info(const speech_model * model, speec
 SPEECH_API speech_status speech_voice_add(speech_model * model, const char * name, const char * path);
 
 /**
+ * Adds a voice and returns an owned information snapshot including it, freed with speech_model_info_free().
+ * On failure neither the voices nor *info change; info may be NULL when no snapshot is needed. Added in 3.2.
+ */
+SPEECH_API speech_status speech_voice_add_with_info(speech_model * model, const char * name, const char * path,
+                                                  speech_model_info ** info);
+
+/**
  * Makes a voice file at `voice_path` from the reference recording in the WAVE file at `reference_path`, for the model
  * file at `model_path`, reading only the codec's encoder from the model file and running it on the device that the
  * parameters name. The recording is mixed to mono, resampled to the model's rate, and may be at most as long as the
@@ -1050,6 +1062,9 @@ SPEECH_API speech_stop speech_result_stop(const speech_result * result);
 
 /** The seed a synthesis used, the request's or the one the library drew; -1 for a recognition and a detection. */
 SPEECH_API int64_t speech_result_seed(const speech_result * result);
+
+/** Whether compatibility processing cut the instructions to their token limit; 0 for NULL. Added in 3.2. */
+SPEECH_API int speech_result_instructions_truncated(const speech_result * result);
 
 /**
  * The number of samples a synthesis passed to its callback, whose length in seconds is this over the sample rate; 0 for

@@ -44,7 +44,9 @@ the runtime's default path that the port runs.
   stops, and a value other than the default that another value leaves without effect (the guidance's mode, range and
   speaker mode with both scales at 0, speaker noise without a branch without the speaker, the tail's settings with
   `keep_tail`, the speaker's scaling's time and layers with a scale of 1). A caller that asks for something gets it or
-  an error.
+  an error. The explicit RF option `irodori_compatible` accepts caption guidance without a caption and speaker
+  guidance without a reference, matching the official runtime for callers that send these values unconditionally.
+  It does not relax the other guidance checks.
 - **The other fields are not offered.** A caller wanting several takes makes several requests with seeds of its own:
   each is a take of the same distribution, though not the runtime's candidates, as no seed of speech.cpp's generator
   gives the runtime's noise. The bounds stay the model's, from its file, past which speech.cpp refuses.

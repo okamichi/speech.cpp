@@ -94,7 +94,20 @@ std::vector<TensorSpec> model_tensors(const ModelFile & m) {
     m.f32(p + "norm_eps");
     m.f32(p + "rope_theta");
     const int text_hidden = m.size(p + "text.hidden_size"), text_heads = m.size(p + "text.num_heads"), text_dim = m.size(p + "text.dim");
-    require_heads(m, p + "text.hidden_size", text_hidden, p + "text.num_heads", text_heads);
+    const bool gemma = m.one_of(p + "text.encoder", {"modernbert", "t5gemma2"}) == "t5gemma2";
+    const int text_head = gemma ? m.size(p + "text.head_dim") : text_hidden / text_heads;
+    const int text_kv_heads = gemma ? m.size(p + "text.num_kv_heads") : text_heads;
+    if (gemma) {
+        require(text_heads % text_kv_heads == 0 && text_head % 2 == 0, m, "text heads must divide into KV groups with even head width");
+        require((int64_t) text_heads * text_head <= INT_MAX, m, "text attention width exceeds the supported range");
+        for (const char * key : {"attention_scale", "embedding_scale", "rope_scale_global"}) {
+            const float value = m.f32(p + "text." + key);
+            require(std::isfinite(value) && value > 0, m, p + "text." + key + " must be finite and positive");
+        }
+        m.u32(p + "text.eoi_id");
+    } else {
+        require_heads(m, p + "text.hidden_size", text_hidden, p + "text.num_heads", text_heads);
+    }
     for (const char * key : {"window", "max_tokens"}) m.u32(p + "text." + key);
     for (const char * key : {"norm_eps", "rope_theta_global", "rope_theta_local"}) m.f32(p + "text." + key);
     const int text_layers = m.count(p + "text.num_layers");
@@ -126,7 +139,10 @@ std::vector<TensorSpec> model_tensors(const ModelFile & m) {
     m.f32(p + "tail.std_threshold");
     m.f32(p + "tail.mean_threshold");
     const size_t pieces = m.str_array(p + "tokenizer.tokens").size();
-    require(m.f64_array(p + "tokenizer.scores").size() == pieces, m, "irodori-tts.tokenizer.scores does not have one score per piece");
+    const bool bpe = m.one_of(p + "tokenizer.type", {"Unigram", "BPE"}) == "BPE";
+    if (bpe) m.str_array(p + "tokenizer.merges");
+    else require(m.f64_array(p + "tokenizer.scores").size() == pieces, m, "irodori-tts.tokenizer.scores does not have one score per piece");
+    if (gemma) require(m.u32(p + "text.eoi_id") < pieces, m, "text.eoi_id is outside the vocabulary");
     for (int32_t id : m.i32_array(p + "tokenizer.added_ids")) require(id >= 0 && (size_t) id < pieces, m, "an added token is not a piece");
     require(m.u32(p + "tokenizer.bos_id") < pieces && m.u32(p + "tokenizer.unknown_id") < pieces, m,
             "the tokenizer's <s> or unknown piece is not a piece");
@@ -157,7 +173,6 @@ std::vector<TensorSpec> model_tensors(const ModelFile & m) {
 
     const int64_t th = text_hidden, td = text_dim, cd = caption_dim, sd = speaker_dim, xd = dit_dim, ld = latent;
     std::vector<TensorSpec> t = {{"text.embd", {th, (int64_t) pieces}, kMatrix},
-                                 {"text.embd_norm", {th}, kF32},
                                  {"text.final_norm", {th}, kF32},
                                  {"speaker.in_proj.weight", {ld * patch, sd}, kMatrix},
                                  {"speaker.in_proj.bias", {sd}, kF32},
@@ -175,12 +190,25 @@ std::vector<TensorSpec> model_tensors(const ModelFile & m) {
                                  {"dit.out_proj.bias", {ld}, kF32}};
     add_projector(t, "text.", th, projector, td);
     if (caption) add_projector(t, "caption.", th, m.width("caption.proj.res_up.weight", 1), cd);
-    add_numbered(t, "text.blk.", text_layers,
-                 {{"attn_q", {th, th}, kMatrix},         {"attn_k", {th, th}, kMatrix},           {"attn_v", {th, th}, kMatrix},
-                  {"attn_out", {th, th}, kMatrix},       {"ffn_norm", {th}, kF32},                {"ffn_act", {th, text_ffn}, kMatrix},
-                  {"ffn_gate", {th, text_ffn}, kMatrix}, {"ffn_down", {text_ffn, th}, kMatrix}});
-    // ModernBERT normalizes the attention's input of every layer but the first.
-    for (int l = 1; l < text_layers; l++) t.push_back({"text.blk." + std::to_string(l) + ".attn_norm", {th}, kF32});
+    if (gemma) {
+        t.push_back({"text.eoi_embd", {th}, kF32});
+        const int64_t q = (int64_t) text_head * text_heads, kv = (int64_t) text_head * text_kv_heads;
+        add_numbered(t, "text.blk.", text_layers,
+                     {{"attn_q", {th, q}, kMatrix}, {"attn_k", {th, kv}, kMatrix}, {"attn_v", {th, kv}, kMatrix},
+                      {"attn_out", {q, th}, kMatrix}, {"q_norm", {text_head}, kF32}, {"k_norm", {text_head}, kF32},
+                      {"attn_norm", {th}, kF32}, {"attn_post_norm", {th}, kF32},
+                      {"ffn_norm", {th}, kF32}, {"ffn_post_norm", {th}, kF32},
+                      {"ffn_act", {th, text_ffn}, kMatrix}, {"ffn_gate", {th, text_ffn}, kMatrix},
+                      {"ffn_down", {text_ffn, th}, kMatrix}});
+    } else {
+        t.push_back({"text.embd_norm", {th}, kF32});
+        add_numbered(t, "text.blk.", text_layers,
+                     {{"attn_q", {th, th}, kMatrix},         {"attn_k", {th, th}, kMatrix},           {"attn_v", {th, th}, kMatrix},
+                      {"attn_out", {th, th}, kMatrix},       {"ffn_norm", {th}, kF32},                {"ffn_act", {th, text_ffn}, kMatrix},
+                      {"ffn_gate", {th, text_ffn}, kMatrix}, {"ffn_down", {text_ffn, th}, kMatrix}});
+        // ModernBERT normalizes the attention's input of every layer but the first.
+        for (int l = 1; l < text_layers; l++) t.push_back({"text.blk." + std::to_string(l) + ".attn_norm", {th}, kF32});
+    }
     const int64_t speaker_head = sd / speaker_heads;
     add_numbered(t, "speaker.blk.", speaker_layers,
                  {{"attn_norm", {sd}, kF32},
@@ -286,10 +314,14 @@ std::vector<TensorSpec> model_tensors(const ModelFile & m) {
  * runtime's 0.9 that layout 2 writes, since every layout 1 file was converted from the runtime at 89f9d8f.
  */
 void upgrade(ModelFile & m) {
-    m.upgrade_bool("irodori-tts.duration.null_speaker", false);
-    m.upgrade_bool("irodori-tts.caption_condition", false);
-    m.upgrade_u32("irodori-tts.caption.dim", m.u32("irodori-tts.text.dim"));
-    if (m.str("irodori-tts.flow") == "rf_velocity") m.upgrade_f32("irodori-tts.sampler.speaker_kv_min_t", 0.9f);
+    if (m.layout_version() == 1) {
+        m.upgrade_bool("irodori-tts.duration.null_speaker", false);
+        m.upgrade_bool("irodori-tts.caption_condition", false);
+        m.upgrade_u32("irodori-tts.caption.dim", m.u32("irodori-tts.text.dim"));
+        if (m.str("irodori-tts.flow") == "rf_velocity") m.upgrade_f32("irodori-tts.sampler.speaker_kv_min_t", 0.9f);
+    }
+    m.upgrade_str("irodori-tts.text.encoder", "modernbert");
+    m.upgrade_str("irodori-tts.tokenizer.type", "Unigram");
 }
 
 /**
@@ -307,7 +339,7 @@ void voice_upgrade(ModelFile & m) {
 
 }  // namespace
 
-const Layout model_layout = {"irodori-tts", 2,
+const Layout model_layout = {"irodori-tts", 3,
                              "convert it again with reference/irodori-tts/convert.py, or download it again from its Hugging Face "
                              "repository",
                              model_tensors, upgrade};

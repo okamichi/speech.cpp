@@ -17,6 +17,41 @@ speech tts irodori-tts-mf --add-voice me=me.voice.gguf --voice me -o out.wav "�
 speech tts irodori-tts --add-voice me=me.voice.gguf --voice me --steps 16 --speed 1.2 -o out.wav "明日の東京は晴れです。"
 ```
 
+## Local Anime and Large checkpoints
+
+The conversion tools also take full-precision v4.1-Anime and v4-Large checkpoints. These models are not in the
+catalog. Use the root `model.safetensors` and `tokenizer/` of each repository; torchao's quantized checkpoints cannot
+be used as GGUF inputs. Large uses T5Gemma2 and Anime uses ModernBERT.
+
+From the repository root, with the upstream folders beside it:
+
+```sh
+reference/irodori-tts/convert-local.sh anime --check-only
+reference/irodori-tts/convert-local.sh anime
+reference/irodori-tts/convert-local.sh large --check-only
+reference/irodori-tts/convert-local.sh large
+```
+
+`--check-only` checks checkpoint metadata and tensor mappings without converting weights or loading the codec.
+Conversion checks the checkpoint's size and SHA-256, writes F32 under `models/converted/<target>/`, and then writes
+F16 as `models/Irodori-TTS-v4.1-Anime.gguf` or `models/Irodori-TTS-v4-Large.gguf`. Large also produces Q8_0 as
+`models/Irodori-TTS-v4-Large-Quantized.gguf`. The F32 file remains for stage checks and other quantizations.
+
+The scripts use uv's locked Python environment. `IRODORI_MODEL_DIR` replaces the source folder;
+`IRODORI_CODEC_DIR` names a folder containing the pinned DACVAE `weights.pth`. Without the latter, conversion fetches
+the pinned codec through Hugging Face. Temporary tensor data goes under `models/.tmp`; allow space for both the
+temporary data and the final F32 file during conversion.
+
+```sh
+build/speech serve models/Irodori-TTS-v4.1-Anime.gguf --device MTL0
+build/speech serve models/Irodori-TTS-v4-Large.gguf --device MTL0
+build/speech serve models/Irodori-TTS-v4-Large-Quantized.gguf --device MTL0
+```
+
+These conversions write layout 3, which requires a build with the local conversion changes. Published layout 2
+Small and Small-MF files remain readable. Large's T5Gemma2 has stage checks on synthetic official weights; its full
+synthesis still needs comparison against the official runtime after conversion.
+
 ## What it does
 
 A diffusion transformer makes a whole sentence's speech, its length predicted beforehand, and a 48 kHz codec decodes it.
@@ -101,6 +136,11 @@ With a reference, the speech keeps the reference's voice and follows the descrip
 speech tts irodori-tts-mf --voice none --instructions "低く落ち着いた男性の声で、ゆっくりと読み上げてください。" \
     -o out.wav "明日の東京は晴れです。"
 ```
+
+On RF models, `irodori_compatible: true` explicitly selects the official caption truncation at the model's token
+limit and accepts inactive caption and speaker guidance. It defaults to false; otherwise long captions and inactive
+nondefault guidance are refused. [The server's bridge mode](../server.md#irodori-bridge-compatibility) selects this
+option for nested `irodori` requests and reports truncation in the WAV response headers.
 
 ## Streaming
 

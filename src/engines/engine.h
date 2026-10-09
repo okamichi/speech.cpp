@@ -148,6 +148,8 @@ public:
     virtual bool progress(double done) = 0;
     /** Whether the request is to stop. */
     virtual bool stopped() = 0;
+    /** Records that the runtime's explicit caption policy cut its token sequence. */
+    virtual void instructions_truncated() {}
 };
 
 /** A token or a segment of a recognition: its start and end in seconds from the start of the audio, and its text. */

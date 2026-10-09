@@ -88,8 +88,8 @@ std::string excerpt(const std::string & text) {
  */
 class Joiner {
 public:
-    Joiner(speech_audio_callback out, void * user_data, int rate)
-        : out_(out), user_data_(user_data), pause_((size_t) std::lround(kSentencePause * rate)) {}
+    Joiner(speech_audio_callback out, void * user_data, int rate, uint64_t limit)
+        : out_(out), user_data_(user_data), pause_((size_t) std::lround(kSentencePause * rate)), limit_(limit) {}
 
     /** The audio callback of every request, with the joiner as its user data. */
     static int receive(const float * s, size_t n, void * self) { return static_cast<Joiner *>(self)->take(s, n); }
@@ -108,6 +108,7 @@ public:
     }
     uint64_t received() const { return received_; }
     uint64_t passed() const { return passed_; }
+    bool capped() const { return capped_; }
 
 private:
     int take(const float * s, size_t n) {
@@ -134,13 +135,18 @@ private:
     }
 
     int pass(const float * s, size_t n) {
+        if (limit_) n = (size_t) std::min<uint64_t>(n, limit_ - passed_);
         passed_ += n;
-        return out_(s, n, user_data_);
+        if (n && out_(s, n, user_data_)) return 1;
+        capped_ = limit_ && passed_ == limit_;
+        return capped_ ? 1 : 0;
     }
 
     speech_audio_callback out_;
     void * user_data_;
     size_t pause_;
+    uint64_t limit_ = 0;
+    bool capped_ = false;
     bool pausing_ = false;
     std::vector<float> held_;
     uint64_t trailing_ = 0, received_ = 0, passed_ = 0;
@@ -165,20 +171,20 @@ bool too_long(const Failure & e) {
 class Speaker {
 public:
     Speaker(speech_model * model, const speech_model_info * info, const std::vector<RequestOption> & options, Split split,
-            speech_audio_callback on_audio, speech_progress_callback on_progress, void * user_data, Cancellation & cancellation)
+            speech_audio_callback on_audio, speech_progress_callback on_progress, void * user_data, Cancellation & cancellation, uint64_t limit_samples)
         : model_(model),
           options_(options),
           split_(split),
           on_progress_(on_progress),
           user_data_(user_data),
           cancellation_(cancellation),
-          joiner_(on_audio, user_data, speech_model_info_sample_rate(info)),
+          joiner_(on_audio, user_data, speech_model_info_sample_rate(info), limit_samples),
           by_sentence_(speaks_by_sentence(info)),
           draws_seed_(speech_model_info_takes(info, SPEECH_OPT_SEED) &&
                       std::none_of(options.begin(), options.end(), [](const RequestOption & o) { return o.option == SPEECH_OPT_SEED; })) {}
 
     std::optional<Spoken> speak_text(const std::string & text) {
-        const bool sentence_each = by_sentence_ && split_ == Split::Sentences;
+        const bool sentence_each = by_sentence_ && split_ != Split::Refused;
         const std::vector<std::string> sentences = sentence_each ? cut_text(text, Cut::Sentences) : std::vector<std::string>();
         if (sentences.size() > 1) {
             for (size_t i = 0; i < sentences.size(); i++) {
@@ -209,19 +215,23 @@ private:
             if (on_progress_) check(speech_request_set_progress(r, on_progress_, user_data_));
             status = check(cancellation_.run(r, [&] { return speech_synthesize(r, Joiner::receive, &joiner_); }));
         } catch (const Failure & e) {
-            if (!cut || !too_long(e) || joiner_.received() > 0) throw;
-            return speak_pieces(text, *cut, e);
+            if (!too_long(e) || joiner_.received() > 0) throw;
+            if (cut) return speak_pieces(text, *cut, e);
+            if (split_ == Split::Compatible) return bisect(text, e);
+            throw;
         }
-        if (status == SPEECH_CANCELLED || joiner_.finish() != 0) {
+        const speech_result * result = speech_request_result(r);
+        spoken_.instructions_truncated = spoken_.instructions_truncated || speech_result_instructions_truncated(result);
+        const bool stopped = status == SPEECH_CANCELLED || joiner_.finish() != 0;
+        if (stopped && (!joiner_.capped() || cancellation_.cancelled())) {
             cancelled_ = true;
             return false;
         }
-        const speech_result * result = speech_request_result(r);
         if (spoken_.requests++ == 0) {
             spoken_.seed = speech_result_seed(result);
             if (draws_seed_) options_.push_back({SPEECH_OPT_SEED, spoken_.seed});
         }
-        spoken_.stop = speech_result_stop(result);
+        spoken_.stop = joiner_.capped() ? SPEECH_STOP_MAX_SECONDS : speech_result_stop(result);
         return spoken_.stop == SPEECH_STOP_COMPLETE;
     }
 
@@ -239,8 +249,21 @@ private:
             }
             return true;
         }
+        if (split_ == Split::Compatible) return bisect(text, refused);
         throw Failure(refused.code(), refused.option(),
                       "\"" + excerpt(text) + "\" has no comma or space to cut it at, and is too long for one request: " + refused.what());
+    }
+
+    /** Retries only a refused text, preserving its bytes on Unicode code point boundaries. */
+    bool bisect(const std::string & text, const Failure & refused) {
+        std::vector<size_t> boundaries;
+        for (size_t at = 0; at < text.size();) {
+            at += code_point(text, at).second;
+            boundaries.push_back(at);
+        }
+        if (boundaries.size() < 2) throw refused;
+        const size_t middle = boundaries[boundaries.size() / 2 - 1];
+        return speak(text.substr(0, middle), std::nullopt) && speak(text.substr(middle), std::nullopt);
     }
 
     speech_model * model_;
@@ -313,7 +336,7 @@ bool speaks_by_sentence(const speech_model_info * info) {
 
 std::optional<Spoken> speak_text(speech_model * model, const std::string & text, const std::vector<RequestOption> & options, Split split,
                                  speech_audio_callback on_audio, speech_progress_callback on_progress, void * user_data,
-                                 Cancellation & cancellation) {
+                                 Cancellation & cancellation, uint64_t limit_samples) {
     const ModelInfo info = model_info(model);
-    return Speaker(model, info.get(), options, split, on_audio, on_progress, user_data, cancellation).speak_text(text);
+    return Speaker(model, info.get(), options, split, on_audio, on_progress, user_data, cancellation, limit_samples).speak_text(text);
 }

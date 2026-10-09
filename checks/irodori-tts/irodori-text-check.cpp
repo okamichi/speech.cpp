@@ -129,9 +129,9 @@ int main(int argc, char ** argv) {
             }
             const Diff ds = compare(Graph::read(out), state.f32);
             std::printf("%s (%zu tokens)\n", d.filename().u8string().c_str(), n);
-            print_diff("  worst ModernBERT layer " + std::to_string(worst_index), worst_layer);
+            print_diff("  worst text encoder layer " + std::to_string(worst_index), worst_layer);
             print_diff("  text condition", ds);
-            worst = std::min(worst, ds.snr_db);
+            worst = std::min(worst, std::min(ds.snr_db, worst_layer.snr_db));
         }
         std::vector<std::filesystem::path> captions;
         for (const auto & e : std::filesystem::recursive_directory_iterator(dir, follow)) {

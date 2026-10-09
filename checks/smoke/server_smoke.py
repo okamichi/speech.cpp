@@ -77,7 +77,7 @@ ORIGIN = "http://localhost:5173"
 server = Server(speech, [model, *([vad] if vad else []), "--cors-origin", ORIGIN, *options])
 call, post_json, transcribe = server.call, server.post_json, server.transcribe
 status, _, body = call("GET", "/health")
-assert status == 200 and json.loads(body) == {"status": "ok"}, body
+assert status == 200 and json.loads(body)["status"] == "ok", body
 status, _, body = call("GET", "/v1/models")
 listed = json.loads(body)
 assert status == 200 and listed["object"] == "list" and len(listed["data"]) == (2 if vad else 1), body

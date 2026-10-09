@@ -9,6 +9,7 @@
 
 #include "jobs.h"
 #include "library.h"
+#include "voices.h"
 
 // The models the server holds: at most one for speech synthesis, one for speech recognition and one for the detection of
 // speech, which cuts the audio of a transcription into the regions where someone speaks, so that a page can speak and
@@ -55,7 +56,12 @@ public:
      * `loading` is how the synthesis and recognition models load: the device, the threads and the warm-up, which a
      * detection model takes on the CPU with one thread (detection_loading()); its voices go to no model.
      */
-    explicit ServedModels(Loading loading);
+    explicit ServedModels(Loading loading, const std::string & directory = "", bool compatible = false);
+    bool compatible() const { return compatible_; }
+    /** Registers an upload on the current synthesis model, serialized with model replacement. */
+    std::pair<std::shared_ptr<Served>, std::string> upload_voice(const std::string & name, const std::string & bytes);
+    /** The health fields from one consistent snapshot of the synthesis place. */
+    std::string health() const;
 
     /**
      * Loads a model given on the command line in the place of its task, which must be empty: a file, or the catalog's
@@ -99,6 +105,9 @@ private:
     const Place & place(speech_task task) const { return const_cast<ServedModels *>(this)->place(task); }
 
     Loading loading_;
+    VoiceStore voices_;
+    bool compatible_ = false;
+    std::mutex changing_;
     mutable std::mutex mutex_;
     Place synthesis_, recognition_, detection_;
 };

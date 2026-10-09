@@ -45,6 +45,8 @@ struct Spoken {
     uint64_t samples = 0;
     /** The library requests that spoke. */
     size_t requests = 0;
+    /** Whether any request truncated its instructions at the model's token limit. */
+    bool instructions_truncated = false;
 };
 
 /** Where a model that speaks by sentence begins to cut a text into requests. */
@@ -53,6 +55,8 @@ enum class Split {
     Sentences,
     /** The text is one request, cut only when the library refuses it as too long: the worker, whose caller chose the text. */
     Refused,
+    /** Sentence splitting with Unicode bisection when no punctuation or space fits the model. */
+    Compatible,
 };
 
 /**
@@ -64,8 +68,10 @@ enum class Split {
  * its commas where it is one sentence, or at its spaces where it has none, and each piece is spoken the same way in turn; a piece
  * with no place to cut that the library refuses fails, naming the piece. The options' seed, or the first request's,
  * applies to every request. A request that stops other than complete ends the synthesis. It returns nothing once
- * cancelled, by `cancellation` or by a callback returning nonzero; a failure of the library throws.
+ * cancelled, by `cancellation` or by a callback returning nonzero; a failure of the library throws. Compatible also
+ * bisects a refused piece at Unicode boundaries. A nonzero limit_samples caps the whole response, including pauses,
+ * and reports max_seconds rather than cancellation.
  */
 std::optional<Spoken> speak_text(speech_model * model, const std::string & text, const std::vector<RequestOption> & options, Split split,
                                  speech_audio_callback on_audio, speech_progress_callback on_progress, void * user_data,
-                                 Cancellation & cancellation);
+                                 Cancellation & cancellation, uint64_t limit_samples = 0);
