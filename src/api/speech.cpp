@@ -101,6 +101,7 @@ const OptionName vocabulary[] = {
     {"speech_pad_ms", SPEECH_TYPE_INT},
     {"max_speech_duration_s", SPEECH_TYPE_FLOAT},
     {"irodori_compatible", SPEECH_TYPE_BOOL},
+    {"decode_on_cpu", SPEECH_TYPE_BOOL},
 };
 constexpr size_t kOptions = sizeof vocabulary / sizeof vocabulary[0];
 
@@ -420,10 +421,9 @@ speech_status speech_model_load(const char * path, const speech_load_params * pa
         ggml_backend_dev_t device = find_device(p.device);
         const int threads = p.threads > 0 ? p.threads : default_threads();
         m->backend.reset(start_device(device, threads));
-        m->engine = m->file->family->load(path, m->backend.get());
+        m->engine = m->file->family->load(path, m->backend.get(), threads);
         m->device = ggml_backend_dev_name(device);
-        // A model on a GPU runs every graph there and none on the CPU.
-        m->threads = ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_CPU ? threads : 0;
+        m->threads = ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_CPU || m->engine->computes_on_cpu() ? threads : 0;
         if (p.warmup) m->engine->warm_up();
         *model = m.release();
         return SPEECH_OK;

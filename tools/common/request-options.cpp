@@ -1,5 +1,6 @@
 #include "request-options.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
@@ -7,6 +8,7 @@
 
 #include "failure.h"
 #include "json.h"
+#include "library.h"
 #include "transcript.h"
 
 namespace {
@@ -143,6 +145,56 @@ void apply_options(speech_request * request, const std::vector<RequestOption> & 
             default: check(speech_request_set_bool(request, o.option, std::get<bool>(o.value) ? 1 : 0)); break;
         }
     }
+}
+
+std::string options_text(const std::vector<RequestOption> & options) {
+    std::string out;
+    for (const RequestOption & o : options) {
+        if (!out.empty()) out += " ";
+        out += option_flag(o.option);
+        switch (o.value.index()) {
+            case 0: out += " " + json_string(std::get<std::string>(o.value)); break;
+            case 1: out += " " + std::to_string(std::get<int64_t>(o.value)); break;
+            case 2: out += " " + json_number(std::get<double>(o.value)); break;
+            default: out += std::get<bool>(o.value) ? "=true" : "=false"; break;
+        }
+    }
+    return out;
+}
+
+std::string options_json(const std::vector<RequestOption> & options) {
+    std::string out = "{";
+    for (const RequestOption & o : options) {
+        if (out.size() > 1) out += ",";
+        out += json_string(speech_option_name(o.option)) + ":";
+        switch (o.value.index()) {
+            case 0: out += json_string(std::get<std::string>(o.value)); break;
+            case 1: out += std::to_string(std::get<int64_t>(o.value)); break;
+            case 2: out += json_number(std::get<double>(o.value)); break;
+            default: out += std::get<bool>(o.value) ? "true" : "false"; break;
+        }
+    }
+    return out + "}";
+}
+
+std::vector<RequestOption> defaults_for(speech_model * model, const std::vector<RequestOption> & defaults) {
+    const ModelInfo info = model_info(model);
+    std::vector<RequestOption> taken;
+    for (const RequestOption & o : defaults) {
+        if (speech_model_info_takes(info.get(), o.option)) taken.push_back(o);
+    }
+    apply_options(new_request(model).get(), taken);
+    return taken;
+}
+
+std::vector<RequestOption> with_defaults(const std::vector<RequestOption> & defaults, const std::vector<RequestOption> & options) {
+    std::vector<RequestOption> out;
+    for (const RequestOption & d : defaults) {
+        const bool set = std::any_of(options.begin(), options.end(), [&](const RequestOption & o) { return o.option == d.option; });
+        if (!set) out.push_back(d);
+    }
+    out.insert(out.end(), options.begin(), options.end());
+    return out;
 }
 
 bool timestamps_in_effect(const speech_model_info * info, const std::vector<RequestOption> & options) {

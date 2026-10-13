@@ -119,6 +119,6 @@ FamilyInfo describe_silero_vad(const std::shared_ptr<const ModelFile> & file) {
     return info;
 }
 
-std::unique_ptr<Engine> load_silero_vad(const std::string & path, ggml_backend_t backend) {
+std::unique_ptr<Engine> load_silero_vad(const std::string & path, ggml_backend_t backend, int) {
     return std::make_unique<SileroVadEngine>(path, backend);
 }

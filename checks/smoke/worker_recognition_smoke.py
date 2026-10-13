@@ -13,8 +13,9 @@ recognized; each error with its code and option (a chunk out of order, not base6
 missing or 0, an unknown language or member, a prompt the model does not take or too long, a decoding it does not take
 or does not have, audio missing, the other task's messages); info, also answered while a recognition runs, and the
 model information of ready; progress for a recognition that runs for more than two seconds, which the worker reports
-a second after the request starts and then at most once a second; and the error of a request still collecting chunks
-when stdin closes.
+a second after the request starts and then at most once a second; the error of a request still collecting chunks
+when stdin closes; and, where the model takes timestamps, that --timestamps given to the worker is the default of a
+request that does not set it.
 
 The audio goes as 16-bit samples, which move the near-silent input of reference/qwen3-asr/dump.py far enough to change
 the text a forced language makes of it; leave that dump out.
@@ -33,12 +34,12 @@ import time
 from worker_client import Worker, dump_requests, short
 
 args = sys.argv[1:]
-options = args[args.index("--") + 1:] if "--" in args else []
+flags = args[args.index("--") + 1:] if "--" in args else []
 args = args[:args.index("--")] if "--" in args else args
 speech, model, *dumps = args
 if not dumps:
     raise SystemExit(__doc__)
-w = Worker(speech, model, options)
+w = Worker(speech, model, flags)
 info = w.ready["model"]
 assert info["task"] == "recognition" and "voices" not in info, short(w.ready)
 w.check_model_information()
@@ -264,4 +265,18 @@ for line in ["this is not JSON", '{"type": "chunk", "seq": 0, "pcm": ""}']:
 w.request(chunks("z", short_pcm)[0])
 rest = w.close()
 assert [(m["type"], m["id"]) for m in rest] == [("error", "z")], [short(m) for m in rest]
+
+# A request option given to the worker as a flag is the default of every request that does not set it: --timestamps
+# gives segments and tokens to a recognition that does not ask for them.
+if timed:
+    w = Worker(speech, model, [*flags, "--timestamps"])
+    assert w.ready["defaults"] == {"timestamps": True}, w.ready["defaults"]
+    send_audio("timed", short_pcm)
+    m = w.terminal("timed", "end")
+    assert m["text"] == short_text and "segments" in m and "tokens" in m, short(m)
+    check_times(m)
+    send_audio("untimed", short_pcm, timestamps=False)
+    assert "segments" not in w.terminal("untimed", "end"), "a request's own timestamps false did not win over --timestamps"
+    w.close()
+    print("--timestamps: a recognition that does not ask for timestamps has its segments and tokens; one with false has none")
 print("ok: every request had one terminal message; the one collecting chunks when stdin closed had an error; exit 0")

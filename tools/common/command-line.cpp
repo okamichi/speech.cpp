@@ -98,7 +98,18 @@ CommandLine parse_command_line(const Command & command, const std::vector<std::s
         const std::optional<std::string> attached = eq == std::string::npos ? std::nullopt : std::optional<std::string>(arg.substr(eq + 1));
         speech_option option;
         const Flag * flag = find_flag(command, name);
-        const bool request_option = !flag && command.request_options && option_of_flag(name, option);
+        std::optional<speech_task> task;
+        bool request_option = !flag && command.request_options && option_of_flag(name, option);
+        if (!flag && !request_option && command.task_options) {
+            const size_t dot = name.find('.');
+            for (speech_task t : {SPEECH_TASK_SYNTHESIS, SPEECH_TASK_RECOGNITION, SPEECH_TASK_DETECTION}) {
+                if (dot != std::string::npos && name.compare(0, dot, std::string("--") + task_prefix(t)) == 0 &&
+                    option_of_flag("--" + name.substr(dot + 1), option)) {
+                    task = t;
+                    request_option = true;
+                }
+            }
+        }
         if (!flag && !request_option) {
             throw UsageError("speech " + command.name + " has no flag " + name);
         }
@@ -120,10 +131,15 @@ CommandLine parse_command_line(const Command & command, const std::vector<std::s
         }
         if (request_option) {
             for (const RequestOption & o : line.options) {
-                if (o.option == option) throw UsageError(name + " is given twice; give it once");
+                if (!task && o.option == option) throw UsageError(name + " is given twice; give it once");
+            }
+            for (const TaskOption & o : line.task_options) {
+                if (task && o.task == *task && o.option.option == option) throw UsageError(name + " is given twice; give it once");
             }
             try {
-                line.options.push_back({option, option_from_text(option, value)});
+                const RequestOption read{option, option_from_text(option, value)};
+                if (task) line.task_options.push_back({*task, read});
+                else line.options.push_back(read);
             } catch (const std::invalid_argument & e) {
                 throw UsageError(e.what());
             }
@@ -164,8 +180,20 @@ std::string command_help(const Command & command) {
         for (speech_option o : vocabulary()) {
             out += "  " + option_flag(o) + (speech_option_type(o) == SPEECH_TYPE_BOOL ? "[=false]" : " " + std::string(option_metavar(o))) + "\n";
         }
+        if (command.task_options) {
+            out += "Each also after tts., asr. or vad. (--asr.language), for the synthesis, recognition or detection model alone.\n";
+        }
     }
     return out;
+}
+
+const char * task_prefix(speech_task task) {
+    switch (task) {
+        case SPEECH_TASK_SYNTHESIS: return "tts";
+        case SPEECH_TASK_RECOGNITION: return "asr";
+        case SPEECH_TASK_DETECTION: return "vad";
+    }
+    return "";
 }
 
 Flag device_flag(const std::string & help) {

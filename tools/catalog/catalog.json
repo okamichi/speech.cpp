@@ -5,12 +5,15 @@
       "repository": "sakasegawa/Qwen3-TTS-12Hz-0.6B-CustomVoice-GGUF",
       "type": "q8_0",
       "start": ["de", "en", "es", "fr", "it", "ja", "ko", "pt", "ru", "zh"],
-      "revision": "2d4d7aea381798737778af3a375e007050029689",
+      "revision": "15c8bffcc084a88e16dc0306472b6b174e4745a9",
       "task": "synthesis",
       "languages": ["de", "en", "es", "fr", "it", "ja", "ko", "pt", "ru", "zh"],
       "voice_files": false,
       "files": [
-        {"type": "q8_0", "file": "Qwen3-TTS-12Hz-0.6B-CustomVoice-Q8_0.gguf", "size": 1213534464, "sha256": "f606ea3981aa42762b16db9a94826d2d560eb60f0b102001618f40d5a2f78cc6"}
+        {"type": "q8_0", "file": "Qwen3-TTS-12Hz-0.6B-CustomVoice-Q8_0.gguf", "size": 1213534464, "sha256": "f606ea3981aa42762b16db9a94826d2d560eb60f0b102001618f40d5a2f78cc6"},
+        {"type": "q6_k", "file": "Qwen3-TTS-12Hz-0.6B-CustomVoice-Q6_K.gguf", "size": 994183424, "sha256": "417a2e42aaa992cc1d3eb8aad48fe5bafa78af0c3eaeccc0d8c068a20d4045c5"},
+        {"type": "q5_k", "file": "Qwen3-TTS-12Hz-0.6B-CustomVoice-Q5_K.gguf", "size": 873894144, "sha256": "4bb9ba9e822ab614798c416c7f0187994f349be41221966fa911aca24f237930"},
+        {"type": "q4_k", "file": "Qwen3-TTS-12Hz-0.6B-CustomVoice-Q4_K.gguf", "size": 760680704, "sha256": "67cbe04239d079d3e3649a054258b8cf1553a99a03cc5b38d57350c6905e4cbd"}
       ]
     },
     {
@@ -18,12 +21,15 @@
       "repository": "sakasegawa/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF",
       "type": "q8_0",
       "start": [],
-      "revision": "0e6b15bd7e51aaee4363ccb128c89730addc5942",
+      "revision": "b61828442c27dccc6ba07f2610cd1abd16fdc967",
       "task": "synthesis",
       "languages": ["de", "en", "es", "fr", "it", "ja", "ko", "pt", "ru", "zh"],
       "voice_files": false,
       "files": [
-        {"type": "q8_0", "file": "Qwen3-TTS-12Hz-1.7B-CustomVoice-Q8_0.gguf", "size": 2287780352, "sha256": "1bc0ef69547c003507b6536639a6080c8856382f4d0963b15d4475528330592d"}
+        {"type": "q8_0", "file": "Qwen3-TTS-12Hz-1.7B-CustomVoice-Q8_0.gguf", "size": 2287780352, "sha256": "1bc0ef69547c003507b6536639a6080c8856382f4d0963b15d4475528330592d"},
+        {"type": "q6_k", "file": "Qwen3-TTS-12Hz-1.7B-CustomVoice-Q6_K.gguf", "size": 1823619584, "sha256": "c4f49f4a1d2e15f5649a1e2f6af95e359f97088313a0c832a9d894f9aac44c51"},
+        {"type": "q5_k", "file": "Qwen3-TTS-12Hz-1.7B-CustomVoice-Q5_K.gguf", "size": 1569079808, "sha256": "c75ace85fa79a897d2b0f6fa05aa9e5ffd6abb869e556f7cf66b35cf87ad12f1"},
+        {"type": "q4_k", "file": "Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf", "size": 1329512960, "sha256": "d643b25ffa11e7c9687aae50d21b5a47076c4f5642c5e6b957f101a98024cc74"}
       ]
     },
     {
@@ -31,12 +37,16 @@
       "repository": "sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF",
       "type": "f16",
       "start": [],
-      "revision": "69d307a472a1708c5637edcfe376d31c2685829d",
+      "revision": "205ab071cb54e46509a84d3a48535df283bc3b0f",
       "task": "synthesis",
       "languages": ["ja"],
       "voice_files": true,
       "files": [
-        {"type": "f16", "file": "Irodori-TTS-866M-MF-v4.1-F16.gguf", "size": 1920321792, "sha256": "e237dc3eefe469b8bba87872beacf12fb7fe00dbdf85767edca8ec04ab910d13"}
+        {"type": "f16", "file": "Irodori-TTS-866M-MF-v4.1-F16.gguf", "size": 1920321792, "sha256": "e237dc3eefe469b8bba87872beacf12fb7fe00dbdf85767edca8ec04ab910d13"},
+        {"type": "q8_0", "file": "Irodori-TTS-866M-MF-v4.1-Q8_0.gguf", "size": 1207133984, "sha256": "2d161b0bbcd74f906f6b07e03d031075f8ae916db1b8bd4daf16cb37b451086a"},
+        {"type": "q6_k", "file": "Irodori-TTS-866M-MF-v4.1-Q6_K.gguf", "size": 1040893024, "sha256": "2feadbb66d5c053cf7fddcd02514b2339c79af4afa38aa00357d9aa6dff0ff96"},
+        {"type": "q5_k", "file": "Irodori-TTS-866M-MF-v4.1-Q5_K.gguf", "size": 949728032, "sha256": "9f5516a00afc6411d5e9cd825fccc8cf00ce4157f973f6657ebb2f9e04eacf60"},
+        {"type": "q4_k", "file": "Irodori-TTS-866M-MF-v4.1-Q4_K.gguf", "size": 863926048, "sha256": "1913bf74000a3300c703eb91c985a4e5c4d7a2bbeb0cc7fe07d1583c4fea9729"}
       ]
     },
     {
@@ -44,12 +54,16 @@
       "repository": "sakasegawa/Irodori-TTS-v4.1-Small-GGUF",
       "type": "f16",
       "start": [],
-      "revision": "3ebbd5ad88a3847c52f9e158d9dbe35178de5b98",
+      "revision": "a8d7c01cf5c306d7b495a1db61e027ca4a9c269a",
       "task": "synthesis",
       "languages": ["ja"],
       "voice_files": true,
       "files": [
-        {"type": "f16", "file": "Irodori-TTS-859M-v4.1-F16.gguf", "size": 1905903936, "sha256": "f334932bdf166579bada0a3c8bdabb7199af85682fdcefb6f1cb7e444f5c75b3"}
+        {"type": "f16", "file": "Irodori-TTS-859M-v4.1-F16.gguf", "size": 1905903936, "sha256": "f334932bdf166579bada0a3c8bdabb7199af85682fdcefb6f1cb7e444f5c75b3"},
+        {"type": "q8_0", "file": "Irodori-TTS-859M-v4.1-Q8_0.gguf", "size": 1199474528, "sha256": "293668c68ed2eec670d69c8c30d570410eedd14678acbdb1a80b3d03117c1600"},
+        {"type": "q6_k", "file": "Irodori-TTS-859M-v4.1-Q6_K.gguf", "size": 1034979488, "sha256": "6d9843d2f6e7d9b749adb7ac74092af1e4d4960f6a8f2a60087aa744c1e2ee07"},
+        {"type": "q5_k", "file": "Irodori-TTS-859M-v4.1-Q5_K.gguf", "size": 944771936, "sha256": "1e3b5c1e088d5c9a2d870be059514d9b13fe6df2ab80e2c00614fb049add91ff"},
+        {"type": "q4_k", "file": "Irodori-TTS-859M-v4.1-Q4_K.gguf", "size": 859871072, "sha256": "a1c174f4552817e84dd6a2a020bc3d0589fd7f30d0c3db53ad04a1e69fb5dbfd"}
       ]
     },
     {
@@ -57,12 +71,15 @@
       "repository": "sakasegawa/Qwen3-ASR-0.6B-GGUF",
       "type": "q8_0",
       "start": ["ar", "cs", "da", "de", "el", "en", "es", "fa", "fi", "fil", "fr", "hi", "hu", "id", "it", "ko", "mk", "ms", "nl", "pl", "pt", "ro", "ru", "sv", "th", "tr", "vi", "yue", "zh"],
-      "revision": "450483d7e7ffc6ddb47048094247db782f7dda04",
+      "revision": "ee78f8709547f39bea3b924a16c72403826cac92",
       "task": "recognition",
       "languages": ["ar", "cs", "da", "de", "el", "en", "es", "fa", "fi", "fil", "fr", "hi", "hu", "id", "it", "ja", "ko", "mk", "ms", "nl", "pl", "pt", "ro", "ru", "sv", "th", "tr", "vi", "yue", "zh"],
       "voice_files": false,
       "files": [
-        {"type": "q8_0", "file": "Qwen3-ASR-0.6B-Q8_0.gguf", "size": 841502336, "sha256": "416e10c15b4a3d9002bd337d18fc450233fdf68502b6e10d1379d2789838afd0"}
+        {"type": "q8_0", "file": "Qwen3-ASR-0.6B-Q8_0.gguf", "size": 841502336, "sha256": "416e10c15b4a3d9002bd337d18fc450233fdf68502b6e10d1379d2789838afd0"},
+        {"type": "q6_k", "file": "Qwen3-ASR-0.6B-Q6_K.gguf", "size": 681496704, "sha256": "8bd6c92f19ef50e65b1f489d2427bc611d122eaf967ccc7f1b7e8f8996112a79"},
+        {"type": "q5_k", "file": "Qwen3-ASR-0.6B-Q5_K.gguf", "size": 593751680, "sha256": "bb75c2612468e1940753a605ab81655d2a139e1a926a9ca721e7f3079787ca90"},
+        {"type": "q4_k", "file": "Qwen3-ASR-0.6B-Q4_K.gguf", "size": 511168128, "sha256": "981c7842de271f53684ff83362c4c9a2d84394d4d7acadabddaa1d3a7b51c0fa"}
       ]
     },
     {
@@ -70,38 +87,49 @@
       "repository": "sakasegawa/Qwen3-ASR-1.7B-GGUF",
       "type": "q8_0",
       "start": [],
-      "revision": "d1b1ebcc7569cae80209262a5fc147d65bebd7bd",
+      "revision": "81e2423d24073cdeeccb5951df16accc89e075a2",
       "task": "recognition",
       "languages": ["ar", "cs", "da", "de", "el", "en", "es", "fa", "fi", "fil", "fr", "hi", "hu", "id", "it", "ja", "ko", "mk", "ms", "nl", "pl", "pt", "ro", "ru", "sv", "th", "tr", "vi", "yue", "zh"],
       "voice_files": false,
       "files": [
-        {"type": "q8_0", "file": "Qwen3-ASR-1.7B-Q8_0.gguf", "size": 2176109216, "sha256": "5f219b78a1d9c3b9e97da27708b36f8a0bc1bfc1650b541c0a6dbaf87c9a62d0"}
+        {"type": "q8_0", "file": "Qwen3-ASR-1.7B-Q8_0.gguf", "size": 2176109216, "sha256": "5f219b78a1d9c3b9e97da27708b36f8a0bc1bfc1650b541c0a6dbaf87c9a62d0"},
+        {"type": "q6_k", "file": "Qwen3-ASR-1.7B-Q6_K.gguf", "size": 1683632800, "sha256": "2a05df6866d3e033ca3ca2bc8f9573abf57b431328e85ccc40eb367e93bdc987"},
+        {"type": "q5_k", "file": "Qwen3-ASR-1.7B-Q5_K.gguf", "size": 1413565088, "sha256": "985f7cdf65cbbb578a4b5eeef52e4c08725bb212dbaba26dc759e50c61e70e40"},
+        {"type": "q4_k", "file": "Qwen3-ASR-1.7B-Q4_K.gguf", "size": 1159383712, "sha256": "38f6f0ca89e51c4adee8313016a580b297f42753829b93fce7e820668bf4c8b7"}
       ]
     },
     {
       "name": "reazonspeech-v2",
       "repository": "sakasegawa/reazonspeech-nemo-v2-GGUF",
-      "type": "f16",
+      "type": "q8_0",
       "start": ["ja"],
-      "revision": "cb9e436cf3f9d9563c610cb5318adcfc5c0fe098",
+      "revision": "ed04d9ee2cd156414982a7c0f6123c6fd1093904",
       "task": "recognition",
       "languages": ["ja"],
       "voice_files": false,
       "files": [
-        {"type": "f16", "file": "reazonspeech-nemo-619M-v2-F16.gguf", "size": 1240465696, "sha256": "1492147d7d18fbb0503db2cbbb05df4932cb3451e391524c6a2411632e4823bf"}
+        {"type": "q8_0", "file": "reazonspeech-nemo-619M-v2-Q8_0.gguf", "size": 660910656, "sha256": "944411cb740938f858c939aa1d42f7eb4bb884fc350d9daae8b7e724853e54a3"},
+        {"type": "f16", "file": "reazonspeech-nemo-619M-v2-F16.gguf", "size": 1240465696, "sha256": "1492147d7d18fbb0503db2cbbb05df4932cb3451e391524c6a2411632e4823bf"},
+        {"type": "q6_k", "file": "reazonspeech-nemo-619M-v2-Q6_K.gguf", "size": 513808960, "sha256": "05e02062233afc6aeb8228624050d93e124b0f8b02185ee6c8923d28c8dac13c"},
+        {"type": "q5_k", "file": "reazonspeech-nemo-619M-v2-Q5_K.gguf", "size": 433140288, "sha256": "a5d2518d263c36802f2aa8caf87952fdcc22e7c557e1891bacf15ceb8d72fece"},
+        {"type": "q4_k", "file": "reazonspeech-nemo-619M-v2-Q4_K.gguf", "size": 357216832, "sha256": "d761f6b65572a0ec46db04f3f9cc829d25084608bcdcb86bc2aae4b95e4bb4c9"}
       ]
     },
     {
       "name": "parakeet-tdt_ctc-0.6b-ja",
       "repository": "sakasegawa/parakeet-tdt_ctc-0.6b-ja-GGUF",
-      "type": "f16",
+      "type": "q8_0",
       "start": [],
-      "revision": "48060c6e292b01c84edac8988db0163fd41d3fe2",
+      "revision": "f7cb5387e1e76385456b7a792054565ecf177417",
       "task": "recognition",
       "languages": ["ja"],
       "voice_files": false,
       "files": [
-        {"type": "f16", "file": "parakeet-tdt_ctc-0.6B-ja-F16.gguf", "size": 1240656832, "sha256": "71ddc10381a9d3b59e18fbc51422059293f1268676b1ca62adb45b791df05497"}
+        {"type": "q8_0", "file": "parakeet-tdt_ctc-0.6B-ja-Q8_0.gguf", "size": 661012416, "sha256": "6ff90c5240f0778dfb44816916eb3c8e634645e120170d6ae43c0f50a11d79d0"},
+        {"type": "f16", "file": "parakeet-tdt_ctc-0.6B-ja-F16.gguf", "size": 1240656832, "sha256": "71ddc10381a9d3b59e18fbc51422059293f1268676b1ca62adb45b791df05497"},
+        {"type": "q6_k", "file": "parakeet-tdt_ctc-0.6B-ja-Q6_K.gguf", "size": 513910720, "sha256": "98cf616f93bc46076174b02050d108a2774e45497aa79cdf2d57b0706af8edbf"},
+        {"type": "q5_k", "file": "parakeet-tdt_ctc-0.6B-ja-Q5_K.gguf", "size": 433242048, "sha256": "3c2d57243a4ccd0013596edf8d3201aeff6446d22229330adca70f6ba2c6071a"},
+        {"type": "q4_k", "file": "parakeet-tdt_ctc-0.6B-ja-Q4_K.gguf", "size": 357318592, "sha256": "3eb2e75ccef3169d54f8a256ff593c73b3302b33ae4a3accbae10fee0dc8c800"}
       ]
     },
     {
@@ -109,12 +137,16 @@
       "repository": "sakasegawa/parakeet-tdt-0.6b-v3-GGUF",
       "type": "f16",
       "start": ["bg", "et", "hr", "lt", "lv", "mt", "sk", "sl", "uk"],
-      "revision": "304eaf83fc16e3087425b61b6652c4eafe003dc4",
+      "revision": "b7ed82dbfba6e63da0ef9cf5104f5fc67da44414",
       "task": "recognition",
       "languages": ["bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu", "it", "lt", "lv", "mt", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk"],
       "voice_files": false,
       "files": [
-        {"type": "f16", "file": "parakeet-tdt-0.6B-v3-F16.gguf", "size": 1255370688, "sha256": "7b74de31ac48427934104f0d074613f8d759d7d108777c114476346789d94426"}
+        {"type": "f16", "file": "parakeet-tdt-0.6B-v3-F16.gguf", "size": 1255370688, "sha256": "7b74de31ac48427934104f0d074613f8d759d7d108777c114476346789d94426"},
+        {"type": "q8_0", "file": "parakeet-tdt-0.6B-v3-Q8_0.gguf", "size": 668107680, "sha256": "7e61f3f5bb8db536ae649a541eb23349833d3d62565aff1da5bcd7c4f163639a"},
+        {"type": "q6_k", "file": "parakeet-tdt-0.6B-v3-Q6_K.gguf", "size": 520625056, "sha256": "e67bf221e89d042daa7da39457c97895fae9296e8bb441b83d50e800900267bb"},
+        {"type": "q5_k", "file": "parakeet-tdt-0.6B-v3-Q5_K.gguf", "size": 439747488, "sha256": "607e89af2cf06099df5aac9ae4f6a1abe09a29656e75710079bbe84156568a4b"},
+        {"type": "q4_k", "file": "parakeet-tdt-0.6B-v3-Q4_K.gguf", "size": 363627424, "sha256": "b70220bc8d8762d75e46461149c0f8a1267db6e53ffae0a393d05f52cf85b3e7"}
       ]
     },
     {

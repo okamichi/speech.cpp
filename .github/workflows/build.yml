@@ -1,10 +1,14 @@
 name: build
 
+# A push or pull request that changes only Markdown, docs/ or skills/ builds nothing: no job reads them. GitHub does not
+# apply the paths to a tag, so a release always builds.
 on:
   push:
     branches: [main]
     tags: ['v*']
+    paths-ignore: ['**.md', 'docs/**', 'skills/**']
   pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'skills/**']
   workflow_dispatch:
     inputs:
       checks:
@@ -125,13 +129,25 @@ jobs:
         with:
           name: speech-windows-x64-vulkan
           path: ${{ env.ARCHIVE }}
+      # ggml's test-backend-ops, whose cases show each defect the ggml fork fixes and each speed-up it carries correct,
+      # built from the submodule's commit for the Windows machine's Vulkan GPU.
+      - name: Build ggml's test-backend-ops
+        if: github.event_name == 'workflow_dispatch' && inputs.checks
+        run: |
+          git submodule update --init --depth 1 ggml
+          $options = "$env:CMAKE_OPTIONS $env:GGML_OPTIONS -DGGML_BUILD_TESTS=ON" -split ' '
+          cmake -S ggml -B ggml-tests @options
+          cmake --build ggml-tests --config Release -j 4 --target test-backend-ops
       # CI has no GPU, so a change to the computation is checked on a Windows machine with one (skills/windows-check).
       # The checks link ggml statically and are large, so they are kept only from a run started by hand with checks.
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'workflow_dispatch' && inputs.checks
         with:
           name: speech-checks-windows-x64-vulkan
-          path: build/Release/*-check.exe
+          path: |
+            build/Release/*-check.exe
+            build/Release/*-timing.exe
+            ggml-tests/bin/Release/test-backend-ops.exe
           retention-days: 7
 
   # Linux x64 twice: with Vulkan, for a GPU of any vendor, and for the CPU alone, which needs no Vulkan loader
@@ -260,7 +276,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          latest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          latest=$(gh release view --repo nyosegawa/speech.cpp --json tagName -q .tagName)
           home="$RUNNER_TEMP/home"
           mkdir -p "$home"
           HOME="$home" sh install.sh --version 0.7.0 --no-modify-path

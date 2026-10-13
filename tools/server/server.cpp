@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -64,7 +65,7 @@ std::string model_json(const Served & served) {
     const auto info = served.info();
     return "{\"id\":" + json_string(speech_model_info_name(info.get())) + ",\"object\":\"model\",\"created\":" +
            std::to_string(served.created()) + ",\"owned_by\":\"speech.cpp\",\"version\":" + json_string(speech_version()) +
-           ",\"speech\":" + speech_model_info_json(info.get()) + "}";
+           ",\"defaults\":" + options_json(served.defaults()) + ",\"speech\":" + speech_model_info_json(info.get()) + "}";
 }
 
 class Server {
@@ -186,6 +187,7 @@ private:
             send_error(res, e);
             return;
         }
+        asked.options = served->with_defaults(asked.options);
         auto job = std::make_shared<TranscriptionJob>();
         job->sample_rate = asked.sample_rate;
         job->duration = (double) asked.samples.size() / asked.sample_rate;
@@ -195,7 +197,8 @@ private:
             job->detector = detector(speech_model_info_name(info.get()), res);
             if (!job->detector) return;
             try {
-                job->detection = detection_request(job->detector->get(), asked.samples, asked.sample_rate, *asked.regions);
+                job->detection = detection_request(job->detector->get(), asked.samples, asked.sample_rate,
+                                                   region_options(*asked.regions, job->detector->defaults()));
             } catch (const Failure & e) {
                 ApiError error = openai::library_error(e);
                 const std::string member = server_vad_member(e.option());
@@ -263,6 +266,66 @@ void report(const Served & served) {
     std::fprintf(stderr, "speech serve: %s (%s) on %s, %d Hz, for %s\n", speech_model_info_name(info.get()), speech_model_info_architecture(info.get()),
                  speech_model_info_device(info.get()), speech_model_info_sample_rate(info.get()),
                  use_of(speech_model_info_task(info.get())));
+    if (!served.defaults().empty()) {
+        std::fprintf(stderr, "speech serve: %s by default %s\n", speech_model_info_name(info.get()), options_text(served.defaults()).c_str());
+    }
+}
+
+/** The flag of an option given for one task's model: "--asr.language". */
+std::string task_flag(speech_task task, speech_option option) {
+    return std::string("--") + task_prefix(task) + "." + option_flag(option).substr(2);
+}
+
+/**
+ * Gives each model the command line named its defaults: the request options given without a task's prefix that it
+ * takes, and those given with its task's prefix, which win over them. An option that no model given takes, or one given
+ * for a task without a model, stops the server. The models are held only while this runs: a model the server keeps a
+ * reference to past it could not be let go when the page replaces it, and the replacement would wait for it forever.
+ */
+void give_defaults(ServedModels & models, const CommandLine & line) {
+    const auto given = models.all();
+    for (const RequestOption & o : line.options) {
+        const bool taken = std::any_of(given.begin(), given.end(), [&](const std::shared_ptr<Served> & s) {
+            return speech_model_info_takes(s->info().get(), o.option) != 0;
+        });
+        if (!taken) {
+            throw Failure(speech_status_name(SPEECH_ERROR_UNSUPPORTED), speech_option_name(o.option),
+                          option_flag(o.option) + " sets " + speech_option_name(o.option) +
+                              " by default for the models given, and none of them takes it; `speech info` lists the options a model takes");
+        }
+    }
+    for (const TaskOption & t : line.task_options) {
+        const auto served = models.of(t.task);
+        const std::string flag = task_flag(t.task, t.option.option);
+        if (!served) throw UsageError(flag + " sets a default for the model that " + use_of(t.task) + " uses, and none is given");
+        if (!speech_model_info_takes(served->info().get(), t.option.option)) {
+            throw Failure(speech_status_name(SPEECH_ERROR_UNSUPPORTED), speech_option_name(t.option.option),
+                          std::string(speech_model_info_name(served->info().get())) + " does not take " + speech_option_name(t.option.option) +
+                              ", which " + flag + " sets; `speech info` lists the options a model takes");
+        }
+    }
+    for (const auto & served : given) {
+        const speech_task task = speech_model_info_task(served->info().get());
+        std::vector<RequestOption> own;
+        for (const TaskOption & t : line.task_options) {
+            if (t.task == task) own.push_back(t.option);
+        }
+        try {
+            served->set_defaults(defaults_for(served->get(), with_defaults(line.options, own)));
+        } catch (const Failure & e) {
+            // A value given for every model that one of them refuses is given to the others with their task's prefix.
+            const auto refused = std::find_if(line.options.begin(), line.options.end(),
+                                              [&](const RequestOption & o) { return e.option() == speech_option_name(o.option); });
+            if (refused == line.options.end()) throw;
+            std::string prefixed;
+            for (const auto & s : given) {
+                if (!speech_model_info_takes(s->info().get(), refused->option)) continue;
+                prefixed += (prefixed.empty() ? "" : " or ") + task_flag(speech_model_info_task(s->info().get()), refused->option);
+            }
+            throw Failure(e.code(), e.option(), std::string(e.what()) + "; " + option_flag(refused->option) +
+                                                    " sets it for every model given that takes it, and " + prefixed + " for one alone");
+        }
+    }
 }
 
 int run_serve(const CommandLine & line, FILE *) {
@@ -290,6 +353,7 @@ int run_serve(const CommandLine & line, FILE *) {
         if (!synthesis) throw UsageError("--add-voice adds voices to the synthesis model, and none is given");
         for (const auto & [name, file] : loading.voices) synthesis->add_voice(name, file);
     }
+    give_defaults(models, line);
     for (const auto & served : models.all()) report(*served);
 
     httplib::Server http;
@@ -336,7 +400,9 @@ Command serve_command() {
         "model, and the text agreed so far while it is said. It has no authentication and no TLS, and refuses a\n"
         "request that a web page at another origin than --cors-origin's sends. On 127.0.0.1, ::1 or localhost it also\n"
         "serves a page on which to pick models of the catalog, fetch them and try them, at the address it prints;\n"
-        "--open opens it, and starts the server without a model if none is given.";
+        "--open opens it, and starts the server without a model if none is given. A request option given as a flag is\n"
+        "the default, in place of the model's own, of every request that does not set it on each MODEL that takes it; a\n"
+        "model the page loads keeps its own defaults.";
     c.flags = {
         {"--host", "ADDRESS", false, "the address to listen on, 127.0.0.1 unless given"},
         {"--port", "N", false, "the port, 8080 unless given; 0 for any free one"},
@@ -350,6 +416,8 @@ Command serve_command() {
         threads_flag(),
         no_warmup_flag(),
     };
+    c.request_options = true;
+    c.task_options = true;
     c.model = ModelKind::Any;
     c.max_args = 3;
     c.run = run_serve;

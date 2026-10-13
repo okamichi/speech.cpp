@@ -53,6 +53,25 @@ OptionValue option_from_json(speech_option option, const JsonValue & value);
 /** Sets each option on `request` through the setter of its type, in order; the library's refusal throws a Failure. */
 void apply_options(speech_request * request, const std::vector<RequestOption> & options);
 
+/** Options as a command line writes them, for a log: "--steps 8 --keep-tail=true". */
+std::string options_text(const std::vector<RequestOption> & options);
+
+/** Options as a JSON object of their names and values, as a request's members give them: {"steps":8,"language":"ja"}. */
+std::string options_json(const std::vector<RequestOption> & options);
+
+/**
+ * The options among `defaults` that the model takes, each checked against it through a request's setters, so that a
+ * value it refuses fails where the program starts rather than at its first request. The setters check each value
+ * alone; values that contradict each other are refused by the requests that run with them.
+ */
+std::vector<RequestOption> defaults_for(speech_model * model, const std::vector<RequestOption> & defaults);
+
+/**
+ * A request's options after the defaults its program was started with: each default whose option `options` does not
+ * set, then `options`, so that the request's own value wins and the model's default holds for the rest.
+ */
+std::vector<RequestOption> with_defaults(const std::vector<RequestOption> & defaults, const std::vector<RequestOption> & options);
+
 /**
  * Whether a recognition with `options` carries its segments and tokens: the timestamps option's value where the
  * options set it, else the model's default, and false for a model that does not take it.

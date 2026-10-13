@@ -102,6 +102,11 @@ another one.
   library and `libspeech` never include either. `speech` has the library and ggml linked in statically, so that a release is
   one executable beside the shared library `libspeech`, which exports the C API and nothing else, for bindings and
   other programs.
+- The submodule is the branch `speech.cpp` of github.com/nyosegawa/ggml: an upstream tag of ggml-org/ggml, a commit of
+  `test-backend-ops` cases, one commit for each defect of the tag that speech.cpp's models meet, which its cases
+  show, and one commit for each speed-up of speech.cpp's models that the tag lacks, with cases that show it correct
+  and its effect measured on Metal and on Vulkan. A defect of ggml is fixed there, with its cases, rather than avoided
+  in speech.cpp.
 - Anything the C API returns is owned by the library, and the header says for how long. A model serves one
   request at a time, and the header says which functions any thread may call.
 - The GGUF layout is this repository's own: one file per model, its codec included, written by
@@ -115,14 +120,15 @@ another one.
   release that reads it to the converter's table and brings the previous layout up in the family's one upgrade
   function. Every model constant lives in the file, from the checkpoint or, where it has none, from the official code,
   and the converter says where.
-- Do not add fallback behavior; fail loudly rather than degrade silently. A GGUF without a key or tensor, a key
-  of another type, a tensor the keys do not call for, a layout the reader does not know,
-  a text longer than the model takes, a WAVE format that is not understood and a device that does not
-  start all throw an `Error` of their kind with a message (`src/common/error.h`), naming the input at fault where
-  there is one; the C API returns each with its category, which every subcommand passes on: the worker as `error` or
-  `fatal`, the server as OpenAI's error by the category alone, and the command line as `speech: <code> (<option>)`. Nothing
-  is truncated or moved to another device behind the caller's back, and the library checks what it is given before
-  ggml sees it, so that no input makes ggml abort the process.
+- Do not add fallback behavior; fail loudly rather than degrade silently. A GGUF without a key or tensor, a key of
+  another type, a tensor the keys do not call for, a layout the reader does not know, a text longer than the model
+  takes, a WAVE format that is not understood and a device that does not start all throw an `Error` of their kind with a
+  message (`src/common/error.h`), naming the input at fault where there is one; the C API returns each with its
+  category, which every subcommand passes on: the worker as `error` or `fatal`, the server as OpenAI's error by the
+  category alone, and the command line as `speech: <code> (<option>)`. Nothing is truncated or moved to another device
+  behind the caller's back: a part of a model's work that runs on another device by design is on the model's page, with
+  a request option that keeps it on the model's device. The library checks what it is given before ggml sees it, so that
+  no input makes ggml abort the process.
 - Fix a defect where its cause is, in a form in which it cannot happen, rather than with a guard for the
   one case that showed it; the code after the fix reads better than before. When a fix is much larger
   than the defect, or needs a choice only the user can make, stop and ask instead of patching.
@@ -174,7 +180,8 @@ another one.
 ## Text
 
 - The output of the tools, README.md, `docs/` and AGENTS.md are English. Japanese and other languages appear only
-  as data: texts to speak and model output.
+  as data: texts to speak and model output. The one exception is README.ja.md, README.md in Japanese, which says what
+  README.md says; a pull request that changes README.md changes README.ja.md the same way.
 - An error message names what failed and what to do.
 
 ## Decisions
@@ -220,8 +227,10 @@ holds steps these rules do not repeat.
 - `adr`: a decision settled or an approach turned down for good, a change that contradicts a record, or tidying
   `docs/adr/`.
 - `docs`: a change that alters what a user does or sees, or writing a page of README.md or `docs/`.
-- `pull-request`: starting a change, committing, opening a pull request, its review and CI, merging, cleaning up, and
-  taking back a subagent's branch.
+- `ggml-fork`: a fix or a speed-up in the ggml fork, its `test-backend-ops` cases, and moving the submodule.
+- `pull-request`: starting a change, committing, opening a pull request, its review and CI, stacked pull requests,
+  merging, cleaning up, and taking back a subagent's branch.
 - `release`: model files and cards on Hugging Face, the catalog, the numbers measured again, raising `VERSION`, the
   README's screenshots of the page, the tag and checking the release.
+- `speed-up`: making a model faster or smaller in memory, measuring the gain and checking the output.
 - `windows-check`: checking a change on a Windows machine with a Vulkan GPU.

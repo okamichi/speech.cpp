@@ -2,8 +2,9 @@
 
 #include <algorithm>
 #include <memory>
+#include <map>
 
-#include "error.h"
+#include "decoder-step.h"
 
 namespace fastconformer {
 
@@ -31,9 +32,7 @@ RnntGreedyDecoder::RnntGreedyDecoder(const ModelFile & m, const PredictionNetwor
 Decoding RnntGreedyDecoder::decode(const std::vector<float> & projected, ggml_backend_t backend, const DecodingProgress & progress) const {
     const int hidden = joint_.hidden(), outputs = joint_.outputs();
     const int64_t frames = (int64_t) (projected.size() / (size_t) hidden);
-    std::unique_ptr<ggml_gallocr, decltype(&ggml_gallocr_free)> allocr(ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend)),
-                                                                       &ggml_gallocr_free);
-    if (!allocr) throw Error(Fault::OutOfMemory, "cannot create a graph allocator");
+    std::map<int64_t, std::unique_ptr<DecoderStep>> runs;
 
     Decoding d;
     PredictionState state = prediction_.initial_state();
@@ -45,16 +44,12 @@ Decoding RnntGreedyDecoder::decode(const std::vector<float> & projected, ggml_ba
         if (progress && !progress((double) t / (double) frames)) break;
         // The prediction for the last label and the joint at frames t to t + n - 1 with it, [outputs, n].
         const int64_t n = std::min(run, frames - t);
-        Graph g(512);
-        const PredictionNetwork::Step step = prediction_.build(g, label, state);
+        auto & step = runs[n];
+        if (!step) step = std::make_unique<DecoderStep>(prediction_, joint_, backend, n);
         const std::vector<float> f(projected.begin() + t * hidden, projected.begin() + (t + n) * hidden);
-        ggml_tensor * out = joint_.build(g.ctx(), g.input(f, hidden, n), joint_.project_prediction(g.ctx(), step.output));
-        g.output(out);
-        g.output(step.h);
-        g.output(step.c);
-        g.compute(backend, allocr.get());
+        step->compute(label, state, f);
         d.graphs++;
-        Graph::read(out, logits);
+        step->logits(logits);
 
         int64_t found = 0;
         int token = blank_;
@@ -70,7 +65,7 @@ Decoding RnntGreedyDecoder::decode(const std::vector<float> & projected, ggml_ba
         t += found;
         d.ids.push_back(token);
         d.frames.push_back(t);
-        state = PredictionNetwork::read_state(step);
+        state = step->state();
         label = token;
         tokens_on_frame = t == last_token_frame ? tokens_on_frame + 1 : 1;
         last_token_frame = t;

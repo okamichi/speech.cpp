@@ -57,14 +57,14 @@ std::optional<std::vector<RequestOption>> chunking_strategy(const std::function<
             throw ApiError{400, "The chunking_strategy " + json_string(strategy->content) + " is not supported; " + how + ".", "chunking_strategy",
                            "unsupported_value"};
         }
-        return region_options({});
+        return std::vector<RequestOption>();
     }
     if (type) {
         if (type->content != "server_vad") {
             throw ApiError{400, "The chunking_strategy type " + json_string(type->content) + " is not supported; " + how + ".",
                            "chunking_strategy[type]", "unsupported_value"};
         }
-        return region_options(given);
+        return given;
     }
     if (!given.empty()) throw ApiError{400, "The members of chunking_strategy need its type; " + how + ".", "chunking_strategy[type]", "missing_required_parameter"};
     return std::nullopt;

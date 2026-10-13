@@ -168,7 +168,7 @@ std::string Session::session_json() {
     std::string turns = "null";
     if (config_.turns) {
         turns = "{\"type\":\"server_vad\"";
-        for (const RequestOption & o : region_options(*config_.turns)) {
+        for (const RequestOption & o : region_options(*config_.turns, models_.detection_defaults())) {
             const std::string member = server_vad_member(speech_option_name(o.option));
             if (member.empty()) continue;
             const OptionValue & v = o.value;
@@ -187,7 +187,7 @@ void Session::tick() {
     if (detection && models_.holds(*detection)) return;
     try {
         if (detection) assembly_.detect(nullptr);
-        assembly_.detect(models_.detect(region_options(*config_.turns)));
+        assembly_.detect(models_.detect(region_options(*config_.turns, models_.detection_defaults())));
         told_no_detection_ = false;
     } catch (...) {
         // While the page loads another detection model, turn detection waits for it; without one, or with one that
@@ -347,7 +347,7 @@ void Session::update(const JsonValue & event) {
     const bool restart = next.turns && (!config_.turns || !same(*next.turns, *config_.turns) || !assembly_.detection());
     if (restart) {
         try {
-            detection = models_.detect(region_options(*next.turns));
+            detection = models_.detect(region_options(*next.turns, models_.detection_defaults()));
         } catch (ApiError & e) {
             e.param = kTurns;
             throw;

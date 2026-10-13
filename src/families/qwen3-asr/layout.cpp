@@ -64,6 +64,8 @@ std::vector<TensorSpec> tensors(const ModelFile & m) {
 
     const int n_fft = m.size(p + "frontend.n_fft"), mels = m.size(p + "frontend.n_mels");
     m.size(p + "frontend.hop_length");
+    // The frontend's real FFT packs the frame's values in pairs.
+    require(n_fft % 2 == 0, m, "qwen3-asr.frontend.n_fft is odd");
     const float log_floor = m.f32(p + "frontend.log_floor"), range = m.f32(p + "frontend.dynamic_range");
     const float offset = m.f32(p + "frontend.log_offset"), divisor = m.f32(p + "frontend.log_divisor");
     require(log_floor > 0 && std::isfinite(log_floor) && range >= 0 && std::isfinite(range) && std::isfinite(offset) &&

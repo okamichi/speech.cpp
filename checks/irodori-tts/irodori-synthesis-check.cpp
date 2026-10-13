@@ -2,9 +2,10 @@
 // reference/irodori-tts/dump.py made with the same model, the dump's text spoken in the voice of the dump's
 // reference latent, of its embedding, or without a reference, from the dump's noise and with its request's length,
 // steps, guidance and cut at the tail, against the audio the official synthesize() returned, the cut at the tail
-// included.
+// included. The DiT attends as it chooses on the device, or as the last argument forces it, so that both attentions are
+// checked on a GPU.
 //
-// usage: irodori-synthesis-check <model.gguf> <reference out dir> [gpu|cpu|device name]
+// usage: irodori-synthesis-check <model.gguf> <reference out dir> [gpu|cpu|device name] [flash|products]
 
 #include <algorithm>
 #include <cstdio>
@@ -44,13 +45,14 @@ double least_snr_db(const std::string & dump) {
 int main(int argc, char ** argv) {
     const std::vector<std::string> args = utf8_args(argc, argv);
     if (args.size() < 3) {
-        std::fprintf(stderr, "usage: %s <model.gguf> <reference out dir> [gpu|cpu|device name]\n", args[0].c_str());
+        std::fprintf(stderr, "usage: %s <model.gguf> <reference out dir> [gpu|cpu|device name] [flash|products]\n", args[0].c_str());
         return 2;
     }
     try {
         ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
         std::printf("backend: %s\n", ggml_backend_name(backend));
-        Synthesizer synth(args[1], backend);
+        Synthesizer synth(args[1], backend, forced_attention(args, 4));
+        std::printf("DiT: %s\n", attention_name(synth.attention()));
         const bool meanflow = synth.model().str("irodori-tts.flow") == "meanflow";
         const std::vector<IrodoriDump> dumps = irodori_dumps(args[2], synth.model().str("general.source.repo_url"), "audio.npy");
         bool ok = !dumps.empty();

@@ -94,7 +94,8 @@ private:
 
 std::string served_json(const Served & served) {
     return "{\"name\":" + (served.catalog_name().empty() ? std::string("null") : json_string(served.catalog_name())) +
-           ",\"path\":" + json_string(served.path()) + ",\"model\":" + speech_model_info_json(served.info().get()) + "}";
+           ",\"path\":" + json_string(served.path()) + ",\"defaults\":" + options_json(served.defaults()) +
+           ",\"model\":" + speech_model_info_json(served.info().get()) + "}";
 }
 
 void Page::route(httplib::Server & http) {

@@ -70,7 +70,8 @@ int check_library(void) {
                                      "rescale_k", "rescale_sigma", "speaker_uncond_mode", "sway_coeff", "keep_tail",
                                      "tail_window_size", "tail_std_threshold", "tail_mean_threshold", "speaker_kv_scale",
                                      "speaker_kv_min_t", "speaker_kv_max_layers", "cfg_scale_instructions", "threshold",
-                                     "min_speech_duration_ms", "min_silence_duration_ms", "speech_pad_ms", "max_speech_duration_s", "irodori_compatible"};
+                                     "min_speech_duration_ms", "min_silence_duration_ms", "speech_pad_ms", "max_speech_duration_s",
+                                      "irodori_compatible", "decode_on_cpu"};
     if (speech_option_count() != sizeof options / sizeof options[0]) {
         fprintf(stderr, "FAIL: the library knows %zu options\n", speech_option_count());
         return 1;
@@ -107,13 +108,6 @@ int check_library(void) {
         fprintf(stderr, "FAIL: the devices are not listed as speech.h declares\n");
         return 1;
     }
-#ifdef __APPLE__
-    if (getenv("GGML_METAL_TENSOR_DISABLE") != NULL) {
-        fprintf(stderr, "FAIL: GGML_METAL_TENSOR_DISABLE is set after the devices were listed\n");
-        return 1;
-    }
-    printf("GGML_METAL_TENSOR_DISABLE is unset again after the devices were listed\n");
-#endif
     return 0;
 }
 
@@ -510,16 +504,17 @@ speech_request * new_request(speech_model * model, const char * text, const char
     return r;
 }
 
-/** Runs `r`, collecting its audio, and returns its status; the request is freed. */
 speech_status speak(speech_request * r, Audio * audio, speech_stop * stop, int64_t * seed) {
-    const speech_status s = speech_synthesize(r, collect, audio);
+    const size_t before = audio->n;
+    speech_status s = speech_synthesize(r, collect, audio);
     const speech_result * result = speech_request_result(r);
     if (stop) *stop = result ? speech_result_stop(result) : SPEECH_STOP_COMPLETE;
     if (seed) *seed = result ? speech_result_seed(result) : -1;
-    if (result && speech_result_samples(result) != audio->n) {
-        fprintf(stderr, "FAIL: a result counts %llu samples where the callback had %zu\n", (unsigned long long) speech_result_samples(result),
-                audio->n);
-        exit(1);
+    const size_t passed = audio->n - before;
+    if (result && speech_result_samples(result) != passed) {
+        fprintf(stderr, "FAIL: a result counts %llu samples where the callback was given %zu\n",
+                (unsigned long long) speech_result_samples(result), passed);
+        s = SPEECH_ERROR_INTERNAL;
     }
     speech_request_free(r);
     return s;

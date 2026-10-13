@@ -1,6 +1,6 @@
 ---
 name: add-model
-description: Port a speech model to speech.cpp, or update or extend one it has. Covers pinning the official implementation, dumping its tensors, converting to one GGUF file, the family's C++ port, stage-by-stage checks against the official code, request options, the entry points, the Hugging Face files and catalog, and measuring in speech-bench. Use when asked to add, port, support, convert or update a model or model family, or to expose an official option or feature of one (新しいモデルを追加、移植、対応、モデルの更新、公式のオプションに対応、変換し直し). Not for a defect in one existing stage, a documentation change (docs), or cutting a release (release).
+description: Port a speech model to speech.cpp, or update or extend one it has. Covers trying a candidate in speech-bench before taking it up, pinning the official implementation, dumping its tensors, converting to one GGUF file, the family's C++ port, stage-by-stage checks against the official code, request options, the entry points, the Hugging Face files and catalog, and measuring in speech-bench. Use when asked to add, port, support, convert or update a model or model family, or to expose an official option or feature of one (新しいモデルを追加、移植、対応、モデルの更新、公式のオプションに対応、変換し直し). Not for a defect in one existing stage, a documentation change (docs), or cutting a release (release).
 ---
 
 # Adding or updating a model
@@ -11,6 +11,9 @@ Read AGENTS.md first; this skill adds the order of work and the checks that are 
 
 ## 1. Before writing code
 
+- **Try the model in speech-bench first** (github.com/nyosegawa/speech-bench): in its official implementation, through
+  an adapter (section 7), and in the runtimes that already run it. Take it up only if its accuracy on the bench's sets,
+  its speed and its memory justify a port; the measurement stays in speech-bench, where later ports compare with it.
 - **List the official request's every field** (the runtime's request object, `transcribe()`'s or `generate()`'s
   arguments, the server's form) and decide each one: a request option, a property of a voice file, or not offered,
   with the reason. Write the decision in an ADR before porting; a field found later changes the C API.
@@ -69,7 +72,9 @@ that speech.cpp does not; references/recognition.md for decoding, prompts, langu
 Read references/distribution.md. In short: one `sakasegawa/<Upstream>-GGUF` repository per upstream model with a card
 and the `speech info --json` of each file beside it, uploaded only when the maintainer approves; then
 `python3 tools/catalog/update_catalog.py`; then speech-bench's catalog and a measurement against the official
-implementation and the other runtimes on the same day, on a quiet machine.
+implementation and the other runtimes on the same day, on a quiet machine, with peak memory and VRAM beside the speed.
+When speech-bench has no adapter for the model's official implementation, add one: a uv project pinned as the
+reference is, running on MPS on macOS and on CUDA on Windows.
 
 ## 8. Finishing
 
@@ -78,5 +83,8 @@ implementation and the other runtimes on the same day, on a quiet machine.
 
 ## Working in parallel
 
-Several families can move at once in separate worktrees. Commit as each part works, so that a stopped session loses
-nothing. Run the long CPU F32 checks one family at a time, and speed measurements only when nothing else runs.
+Several families can move at once, each in a worktree of its own. Commit as each part works, so that a stopped session
+loses nothing. Run the long CPU F32 checks one family at a time, and speed measurements only when nothing else runs.
+Agents sharing a machine serialize their GPU work with a lock held for one run (`/usr/bin/lockf -k <lock file>
+<command>`) and build with a bounded `-j`. Wait for a background job by its notification or a file it writes, never with
+a `pgrep -f` loop, which matches the waiting shell's own command line and never ends.

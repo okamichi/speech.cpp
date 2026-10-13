@@ -1,7 +1,8 @@
 // The fields of a model's request options, built from its information as speech info --json gives it: each option's
 // type, whether it is required, its default, its range and its choices. The common options are shown and the rest are
 // folded away; an option the model checks but does not steer by has no field, and a field left as it came sends
-// nothing, so that the model's own default applies.
+// nothing, so that the default applies: the model's own, or the one the server was started with. A text field starts
+// with its default, so that emptying it sends the empty text in place of a default the server was started with.
 
 import { languageName } from './languages.js';
 
@@ -28,10 +29,24 @@ function range(option) {
   return '';
 }
 
+/**
+ * A held model's information with the defaults the server was started with in place of the model's own, so that each
+ * field shows, and leaves to the server, the default a request without it gets; the model's own stays as `own`, which
+ * a choice of the model's own default that is not among its choices, such as a language's auto, still offers.
+ */
+export function withServerDefaults(held) {
+  const defaults = held.defaults ?? {};
+  const options = held.model.options.map((o) =>
+    o.name in defaults ? { ...o, default: defaults[o.name], own: o.default, server: true } : o);
+  return { ...held.model, options };
+}
+
 function hint(option) {
-  if (option.name === 'seed') return 'drawn for each request when empty';
+  if (option.name === 'seed' && !option.server) return 'drawn for each request when empty';
   const parts = [];
-  if (option.default !== undefined && option.type !== 'bool' && !option.choices && option.default !== '') parts.push(`default ${option.default}`);
+  const shown = option.default !== undefined && (option.type === 'int' || option.type === 'float');
+  if (shown) parts.push(`default ${option.default}${option.server ? ', set when the server started' : ''}`);
+  else if (option.server) parts.push('default set when the server started');
   if (option.type === 'int' || option.type === 'float') parts.push(range(option));
   return parts.filter(Boolean).join(', ');
 }
@@ -84,6 +99,9 @@ export class OptionForm {
     } else if (option.choices) {
       input = document.createElement('select');
       if (!option.required) input.append(new Option(option.default !== undefined ? `Default (${this.#choiceText(option, option.default)})` : 'Default', ''));
+      if (option.server && option.own !== undefined && !option.choices.includes(option.own)) {
+        input.append(new Option(this.#choiceText(option, option.own), option.own));
+      }
       for (const choice of option.choices) input.append(new Option(this.#choiceText(option, choice), choice));
     } else if (option.type === 'int' || option.type === 'float') {
       input = document.createElement('input');
@@ -98,6 +116,7 @@ export class OptionForm {
         input.rows = 2;
         element.classList.add('wide');
       }
+      input.value = option.default ?? '';
     }
     input.id = id;
     input.name = option.name;
@@ -141,6 +160,9 @@ export class OptionForm {
       describe();
       if (event.isTrusted) this.#voiceChosen = true;
     });
+    if (option.choices.includes(option.default)) select.value = option.default;
+    // A voice the server was started with is kept as one the user chose, which the text's language does not replace.
+    this.#voiceChosen = option.server === true;
     describe();
     this.voices = voices;
     return select;
@@ -164,6 +186,9 @@ export class OptionForm {
     for (const [name, { option, input }] of this.#fields) {
       if (option.type === 'bool') {
         if (input.checked !== (option.default ?? false)) out[name] = input.checked;
+      } else if (option.type === 'string' && !option.choices) {
+        const value = input.value.trim() === '' ? '' : input.value;
+        if (value !== (option.default ?? '')) out[name] = value;
       } else if (input.value.trim() !== '') {
         out[name] = option.type === 'int' || option.type === 'float' ? Number(input.value) : input.value;
       }

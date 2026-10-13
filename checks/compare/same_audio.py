@@ -3,12 +3,13 @@ audio differs, so that a change meant to leave the audio as it was is shown to: 
 callback passes, compared bit for bit, which the 16 bits of a WAVE file would round away.
 
 Each side runs in a process of its own, which loads its library and model once and speaks every sentence of the
-prompts file with every seed and, for each --steps, that many sampler steps (none for the model's default). A side's
---before-set and --after-set give options of the C API's vocabulary to its requests alone, as NAME=JSON, so that a
-request that sets a default explicitly can be compared with one that leaves it out.
+prompts file in the voice of --voice, a voice file it adds, or of --model-voice, one of the model's own, with every seed
+and, for each --steps, that many sampler steps (none for the model's default). A side's --before-set and --after-set
+give options of the C API's vocabulary to its requests alone, as NAME=JSON, so that a request that sets a default
+explicitly can be compared with one that leaves it out.
 
 usage: python3 checks/compare/same_audio.py <libspeech before> <model before> <libspeech after> <model after> <prompts.json>
-                                            --voice FILE [--device NAME] [--seeds 1,2,3] [--steps N]...
+                                            (--voice FILE | --model-voice NAME) [--device NAME] [--seeds 1,2,3] [--steps N]...
                                             [--before-set NAME=JSON]... [--after-set NAME=JSON]...
 """
 
@@ -24,7 +25,7 @@ STRING, INT, FLOAT, BOOL = 0, 1, 2, 3
 AUDIO = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.POINTER(ctypes.c_float), ctypes.c_size_t, ctypes.c_void_p)
 
 
-def speak_side(library, model_path, voice, device, prompts, seeds, steps, settings, out_dir):
+def speak_side(library, model_path, voice_file, voice, device, prompts, seeds, steps, settings, out_dir):
     """Speaks every request of one side into out_dir, one file of raw float32 samples per request."""
     lib = ctypes.CDLL(library)
     lib.speech_last_error.restype = ctypes.c_char_p
@@ -39,7 +40,8 @@ def speak_side(library, model_path, voice, device, prompts, seeds, steps, settin
     check(lib.speech_load_params_set_device(params, device.encode()), "the device")
     model = ctypes.c_void_p()
     check(lib.speech_model_load(model_path.encode(), params, ctypes.byref(model)), model_path)
-    check(lib.speech_voice_add(model, b"voice", voice.encode()), voice)
+    if voice_file:
+        check(lib.speech_voice_add(model, voice.encode(), voice_file.encode()), voice_file)
 
     options = []
     for name, value in settings:
@@ -60,7 +62,7 @@ def speak_side(library, model_path, voice, device, prompts, seeds, steps, settin
                 request = ctypes.c_void_p()
                 check(lib.speech_request_new(model, ctypes.byref(request)), "speech_request_new")
                 check(lib.speech_request_set_text(request, prompt["text"].encode()), prompt["id"])
-                check(lib.speech_request_set_string(request, 0, b"voice"), "voice")
+                check(lib.speech_request_set_string(request, 0, voice.encode()), voice)
                 check(lib.speech_request_set_int(request, 2, ctypes.c_int64(seed)), "seed")
                 if step_count:
                     check(lib.speech_request_set_int(request, 6, ctypes.c_int64(step_count)), "steps")
@@ -93,7 +95,9 @@ parser.add_argument("before_model")
 parser.add_argument("after_library")
 parser.add_argument("after_model")
 parser.add_argument("prompts")
-parser.add_argument("--voice", required=True)
+voices = parser.add_mutually_exclusive_group(required=True)
+voices.add_argument("--voice")
+voices.add_argument("--model-voice")
 parser.add_argument("--device", default="auto")
 parser.add_argument("--seeds", default="1,2,3")
 parser.add_argument("--steps", type=int, action="append")
@@ -109,7 +113,8 @@ steps = args.steps or [0]
 if args.side:
     before = args.side == "before"
     speak_side(args.before_library if before else args.after_library, args.before_model if before else args.after_model, args.voice,
-               args.device, prompts, seeds, steps, settings_of(args.before_set if before else args.after_set), args.out)
+               args.model_voice or "voice", args.device, prompts, seeds, steps, settings_of(args.before_set if before else args.after_set),
+               args.out)
     sys.exit(0)
 
 with tempfile.TemporaryDirectory() as tmp:

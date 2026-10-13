@@ -1,6 +1,6 @@
 ---
 name: release
-description: Release a new version of speech.cpp. Covers the model files on Hugging Face and their cards, the catalog compiled into speech, re-measuring the numbers the docs give, the pull request that raises VERSION, the README's screenshots of the page, the tag that builds and publishes the archives, and checking what was published. Use when asked to release, publish, cut or tag a version, bump VERSION, upload converted model files, or write a model card (リリース、バージョンを上げる、タグ、公開、HF に上げる、モデルカード). Not for an ordinary pull request (pull-request) or for porting a model (add-model).
+description: Release a new version of speech.cpp. Covers the model files on Hugging Face and their cards, the catalog compiled into speech, re-measuring the numbers the docs give (RTFx, time to first audio, latency, load time, peak memory, VRAM), the pull request that raises VERSION, the README's screenshots of the page, the tag that builds and publishes the archives, and checking what was published. Use when asked to release, publish, cut or tag a version, bump VERSION, upload converted model files, or write a model card (リリース、バージョンを上げる、タグ、公開、HF に上げる、モデルカード). Not for an ordinary pull request (pull-request), porting a model (add-model) or making one faster (speed-up).
 ---
 
 # Releasing speech.cpp
@@ -46,11 +46,36 @@ the model loads. The catalog's update is a pull request of its own, or part of t
 
 ## 4. The numbers
 
-The headline numbers of README.md and the family pages are measured again for the release, with speech-bench against
-the build that will be released: `SPEECH_BENCH_SPEECH_CPP=<build dir>` for a local build, `ci:<run id>` for a CI run's
-archive (the Windows machine takes this one). Measure every runtime of a comparison on the same day, with nothing else
-running, and write each number with its model, type and device. A number that moved goes into the pages in the version's
-pull request or before it.
+The numbers of README.md, README.ja.md and the model pages are measured again for the release, with speech-bench
+against the build that will be released: `SPEECH_BENCH_SPEECH_CPP=<build dir>` for a local build, `ci:<run id>` for a CI
+run's archive (the Windows machine takes this one). A model whose speed or memory changed since the last release has its
+page's tables measured again for every type they list, not only the headline.
+
+### What is measured
+
+| Figure | How |
+|---|---|
+| RTFx | seconds of audio over seconds of wall time, the median over the inputs |
+| time to first audio | from a synthesis request to its first chunk: p50, p90 and p99 |
+| latency | from a recognition request to its result: p50, p90 and p99 |
+| the first request | the first request after loading, apart from the rest, which it would skew |
+| load time | cold, from a copy of the file that is not in the OS's file cache, and warm, loaded again |
+| peak memory | the process's peak: "peak memory footprint" of `/usr/bin/time -l` on macOS |
+| VRAM | the GPU's memory in use, its peak above the start, on Windows (windows-check) |
+
+### How
+
+- A cold load needs a copy that the OS has not cached, made without administrator rights: on macOS an APFS clone
+  (`cp -c`), on Windows an unbuffered copy (`robocopy /J`), a new one for each load. Show first that it is cold: its
+  first load takes clearly longer than loading it again.
+- Alternate the builds or runtimes compared (A B A B), three rounds or more, all on the same day with nothing else
+  running, and report medians.
+- Compare with the official implementations, through speech-bench's adapters (MPS on macOS, CUDA on Windows), and
+  with the other runtimes that run the model.
+- Write the environment with the numbers: the machine, its chip or GPU and memory, the OS and driver versions, the
+  release or commit, the model's file and type, and the date. Each number in the pages carries its model, type and
+  device.
+- A number that moved goes into the pages in the version's pull request or before it.
 
 ## 5. The version
 

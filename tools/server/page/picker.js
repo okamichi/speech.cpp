@@ -114,15 +114,17 @@ export class ModelPicker {
     const fetched = file.fetched ? 'fetched' : file.partial ? `${megabytes(file.partial)} of it fetched` : 'not fetched yet';
     $('.model-meta').textContent = `${gigabytes(file.size)}, ${fetched}`;
     const languages = $('.model-languages');
-    if (model.start.length) {
+    // The file a name alone fetches is the one to start with, not the model's other types.
+    const start = file.type === model.type ? model.start : [];
+    if (start.length) {
       const badge = document.createElement('p');
       badge.className = 'badge start';
-      badge.textContent = `Start here for ${startPhrase(model.start)}`;
-      badge.title = languageNames(model.start).join(', ');
+      badge.textContent = `Start here for ${startPhrase(start)}`;
+      badge.title = languageNames(start).join(', ');
       languages.append(badge);
     }
     // A model that is the one to start with for every language it takes needs its badge alone.
-    if (model.start.length !== model.languages.length) languages.append(languageList(model.languages));
+    if (start.length !== model.languages.length) languages.append(languageList(model.languages));
     item.dataset.state = inUse ? 'held' : file.fetched ? 'fetched' : 'remote';
 
     const use = $('.model-use');

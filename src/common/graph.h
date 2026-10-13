@@ -40,8 +40,8 @@ public:
 
     ggml_tensor * input(const std::vector<float> & data, int64_t ne0, int64_t ne1 = 1, int64_t ne2 = 1, int64_t ne3 = 1);
     ggml_tensor * input(const std::vector<int32_t> & data, int64_t ne0);
-    /** A half-precision input of `data`, [ne0, ne1]: what ggml_flash_attn_ext takes as its mask. */
-    ggml_tensor * half_input(const std::vector<float> & data, int64_t ne0, int64_t ne1);
+    /** A half-precision input of `data`, [ne0, ne1, ne2, ne3]: what ggml_flash_attn_ext takes as its mask. */
+    ggml_tensor * half_input(const std::vector<float> & data, int64_t ne0, int64_t ne1, int64_t ne2 = 1, int64_t ne3 = 1);
     /** A float32 input of zeros, for padding with a concatenation where a backend pads only on the right. */
     ggml_tensor * zeros(int64_t ne0, int64_t ne1);
 

@@ -69,22 +69,7 @@ std::optional<std::string> read_line(const std::string & path) {
 void start_ggml() {
     route_ggml_log();
     static std::once_flag once;
-    std::call_once(once, [] {
-#ifdef __APPLE__
-        // ggml v0.25.3's kernel_mul_mm on the tensor API, which Metal uses by default on M5, M6, A19 and A20, writes
-        // past its output when the output has 64 modulo 128 columns and so corrupts the next tensor: a codec window of
-        // 64 frames decodes to noise on an M5. ggml has no API for it and reads the variable only while it first lists
-        // its devices, so it is set for that listing and the host's value is put back.
-        const char * before = std::getenv("GGML_METAL_TENSOR_DISABLE");
-        const std::optional<std::string> saved = before ? std::optional<std::string>(before) : std::nullopt;
-        setenv("GGML_METAL_TENSOR_DISABLE", "1", 1);
-        ggml_backend_dev_count();
-        if (saved) setenv("GGML_METAL_TENSOR_DISABLE", saved->c_str(), 1);
-        else unsetenv("GGML_METAL_TENSOR_DISABLE");
-#else
-        ggml_backend_dev_count();
-#endif
-    });
+    std::call_once(once, [] { ggml_backend_dev_count(); });
 }
 
 const std::vector<ggml_backend_dev_t> & devices() {

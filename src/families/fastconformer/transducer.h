@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "graph.h"
@@ -12,6 +13,18 @@ namespace fastconformer {
 struct PredictionState {
     std::vector<float> h, c;
 };
+
+/**
+ * Whether the tensor `name` is one that a decoding reads: the prediction network's and the joint's, but for the joint's
+ * projection of the encoder, which the encoder's graph computes.
+ */
+bool decoding_tensor(const std::string & name);
+
+/**
+ * Whether every matrix a decoding multiplies by, the prediction network's LSTM layers and the joint's projection of the
+ * prediction and output layer, is quantized in the file `m`: Q8_0 or a K-quant rather than F16 or F32.
+ */
+bool quantized_decoding(const ModelFile & m);
 
 /**
  * NeMo's RNNTDecoder (nemo/collections/asr/modules/rnnt.py) with the blank as the embedding's padding: an
@@ -33,6 +46,9 @@ public:
     PredictionState initial_state() const;
 
     Step build(Graph & g, int32_t label, const PredictionState & state) const;
+
+    /** Builds a step from tensor inputs so that a decoder can reuse its graph for subsequent labels. */
+    Step build(Graph & g, ggml_tensor * label, ggml_tensor * h, ggml_tensor * c) const;
 
     /** The next state of a step that has been computed. */
     static PredictionState read_state(const Step & step);

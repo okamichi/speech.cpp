@@ -5,7 +5,7 @@
 
 import * as api from './api.js';
 import { AudioInput } from './audio-input.js';
-import { OptionForm } from './options.js';
+import { OptionForm, withServerDefaults } from './options.js';
 import { Transcript } from './pieces.js';
 import { length, TranscriptView } from './transcript.js';
 import { wavFile } from './wav.js';
@@ -47,7 +47,7 @@ export class TranscribePanel {
     this.#held = held;
     if (held) {
       const kept = this.#options?.values() ?? {};
-      this.#options = new OptionForm(held.model, $('transcribe-options'), null, FORM_OPTIONS);
+      this.#options = new OptionForm(withServerDefaults(held), $('transcribe-options'), null, FORM_OPTIONS);
       this.#options.restore(kept);
     } else {
       $('transcribe-options').replaceChildren();

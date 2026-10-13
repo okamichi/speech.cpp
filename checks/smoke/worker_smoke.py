@@ -10,13 +10,17 @@ objects or have no id or type, the other task's messages); chunks to a synthesis
 Irodori-TTS a fixed length, the progress of a long sampler, a paragraph past what one request speaks spoken in one
 synthesize, whose reported seed repeats it, and a run with no place to cut refused, naming it, and for Qwen3-TTS a text
 past its tokens refused, max_seconds and the sampling options, and an instruction where the model takes one and its
-refusal where it does not. Writes the first answer to a WAV.
+refusal where it does not; and that a request option given to the worker as a flag is the default of a request that
+does not set it, while one the model does not take or out of its range ends the worker with fatal. Writes the first
+answer to a WAV.
 
 usage: python3 checks/smoke/worker_smoke.py <out.wav> <speech> <model.gguf> [worker options...]
        A model that takes voice files needs --add-voice NAME=FILE, whose FILE add_voice adds again under another name.
 """
 
 import base64
+import json
+import subprocess
 import sys
 import time
 import wave
@@ -261,6 +265,28 @@ else:
 w.request({"type": "synthesize", "id": "last", "text": "おしまい。", "voice": voice})
 rest = w.close()
 assert rest[-1]["type"] == "end" and rest[-1]["id"] == "last", short(rest[-1])
+
+# A request option given to the worker as a flag is the default of every request that does not set it, and one the model
+# does not take, or a value out of its range, ends the worker with fatal before ready.
+assert ready["defaults"] == {}, ready["defaults"]
+w = Worker(speech, model, [*options, "--seed", "11"])
+assert w.ready["model"] == info and w.ready["defaults"] == {"seed": 11}, "ready's defaults or model information"
+w.request({"type": "info", "id": "defaults-info"})
+assert w.terminal("defaults-info", "end")["defaults"] == {"seed": 11}, "info's defaults"
+voice = added[0][0] if added else info["voices"][0]["name"]
+pcm_default, end_default = speak("default")
+assert end_default["seed"] == 11 and pcm_default == pcm_a, "a request without a seed did not speak with the worker's --seed 11"
+assert speak("own", seed=5)[1]["seed"] == 5, "a request's own seed did not win over the worker's --seed"
+w.close()
+print("--seed 11: in ready's and info's defaults, a request without a seed spoke seed 11's audio, and one with seed 5 kept it; "
+      "ready's model information unchanged")
+for flags, code, option in [(["--timestamps"], "unsupported", "timestamps"), (["--seed", "-1"], "out_of_range", "seed")]:
+    run = subprocess.run([speech, "worker", model, *options, *flags], stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    first = json.loads(run.stdout.splitlines()[0])
+    assert run.returncode != 0 and first["type"] == "fatal", (run.returncode, run.stdout[:300])
+    assert (first["error"]["code"], first["error"]["option"]) == (code, option), short(first)
+    print(f"{' '.join(flags)}: fatal {code} ({option}) before ready: {first['error']['message'][:90]}")
+
 with wave.open(out_wav, "wb") as f:
     f.setnchannels(1)
     f.setsampwidth(2)

@@ -69,8 +69,9 @@ std::string list(const std::vector<int> & windows) {
 }  // namespace
 
 int main() {
-    // The synthesizer's rule for Irodori-TTS's codec, frames of 1920 samples at 48 kHz.
-    const WindowRule rule = Synthesizer::window_rule(1920, 48000);
+    // The synthesizer's rule for Irodori-TTS's codec: frames of 1920 samples at 48 kHz, and a decoder whose receptive
+    // field reaches 8 frames.
+    const WindowRule rule = Synthesizer::window_rule(1920, 48000, 8);
     // An Apple M5 decoded the 68 frames of a 48-frame window in 0.288 s through 0.7.1's worker (2026-10-07).
     const double m5 = 0.288 / 68;
     const Machine machines[] = {

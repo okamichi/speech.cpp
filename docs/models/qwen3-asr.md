@@ -63,6 +63,21 @@ Where a Q8_0 text differs, the official choice between two tokens was within the
 On the 4,483 utterances of Common Voice 8.0's Japanese test set, trimmed to the voice, the CER in Q8_0 is 11.89% for the
 0.6B model and 9.49% for the 1.7B (7.05% and 4.67% accepting other spellings of the same words).
 
+## Weight types
+
+Each model comes in four types; `NAME:TYPE` fetches one (`speech asr qwen3-asr-1.7b:q6_k`). speech-bench on 2026-10-12,
+on an Apple M5 with Metal: the CER on Common Voice 8.0's 4,483 Japanese test utterances, and after the slash the CER
+accepting other spellings of the same words. The memory is the peak of one request.
+
+| Type | 0.6B file | Memory | CER | 1.7B file | Memory | CER |
+|---|---|---|---|---|---|---|
+| Q8_0 | 0.84 GB | 1.00 GB | 11.89% / 7.05% | 2.18 GB | 2.34 GB | 9.49% / 4.67% |
+| Q6_K | 0.68 GB | 0.84 GB | 12.01% / 7.02% | 1.68 GB | 1.85 GB | 9.52% / 4.72% |
+| Q5_K | 0.59 GB | 0.75 GB | 12.49% / 7.57% | 1.41 GB | 1.58 GB | 9.85% / 4.96% |
+| Q4_K | 0.51 GB | 0.67 GB | 14.23% / 8.66% | 1.16 GB | 1.32 GB | 11.21% / 5.96% |
+
+In the 0.6B model's Q6_K, Q5_K and Q4_K files, the encoder and the projector stay Q8_0.
+
 ## Speed
 
 speech-bench on 2026-10-08: Common Voice's Japanese test set, Q8_0, one utterance at a time, the language left to the

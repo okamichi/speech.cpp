@@ -56,6 +56,20 @@ Every stage is checked against the official implementation's tensors:
 | Talker and code predictor, F32, CPU and Metal | the official choice on every frame; greedy decoding gives the official frames |
 | Tokenizer | the official tokens on 27 texts, and the official text of 1191 sequences of ids |
 
+## Weight types
+
+Each model comes in four types; `NAME:TYPE` fetches one (`speech tts qwen3-tts-0.6b:q6_k`). speech-bench on 2026-10-12,
+on an Apple M5 with Metal: the 20 sentences of its `prompts/speak-ja-JP.json` with `ono_anna` and seeds 1, 2 and 3, as
+Qwen3-ASR 1.7B hears them. The memory is the peak of one request. The CER of one type moves by a few points from seed to
+seed, so only a larger difference, such as the 0.6B model's Q4_K, tells two types apart.
+
+| Type | 0.6B file | Memory | CER | 1.7B file | Memory | CER |
+|---|---|---|---|---|---|---|
+| Q8_0 | 1.21 GB | 1.37 GB | 6.14% | 2.29 GB | 2.44 GB | 6.25% |
+| Q6_K | 0.99 GB | 1.15 GB | 6.03% | 1.82 GB | 1.98 GB | 4.42% |
+| Q5_K | 0.87 GB | 1.03 GB | 7.35% | 1.57 GB | 1.72 GB | 6.02% |
+| Q4_K | 0.76 GB | 0.92 GB | 13.60% | 1.33 GB | 1.48 GB | 7.19% |
+
 ## Speed
 
 speech-bench on 2026-10-08: the 20 sentences of its `prompts/speak-ja-JP.json` with the speaker `ono_anna`, one

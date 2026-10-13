@@ -48,7 +48,7 @@ private:
     std::vector<double> filterbank_;
     /** The bins [first, second) where each mel filter is not zero. */
     std::vector<std::pair<int, int>> bands_;
-    Fft fft_;
+    RealFft fft_;
 };
 
 }  // namespace qwen3_asr

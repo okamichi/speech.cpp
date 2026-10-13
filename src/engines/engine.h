@@ -240,20 +240,23 @@ public:
 
     /** Runs a short request of the model's task, so that a GPU compiles its kernels before the first request. */
     virtual void warm_up() = 0;
+
+    /** Whether some of the graphs of a model on a GPU compute on the CPU, with the threads the model was loaded with. */
+    virtual bool computes_on_cpu() const { return false; }
 };
 
 FamilyInfo describe_qwen3_tts(const std::shared_ptr<const ModelFile> & file);
-std::unique_ptr<Engine> load_qwen3_tts(const std::string & path, ggml_backend_t backend);
+std::unique_ptr<Engine> load_qwen3_tts(const std::string & path, ggml_backend_t backend, int threads);
 
 FamilyInfo describe_irodori_tts(const std::shared_ptr<const ModelFile> & file);
-std::unique_ptr<Engine> load_irodori_tts(const std::string & path, ggml_backend_t backend);
+std::unique_ptr<Engine> load_irodori_tts(const std::string & path, ggml_backend_t backend, int threads);
 void make_irodori_tts_voice(const std::string & model_path, const VoiceRecipe & recipe, const std::string & voice_path, ggml_backend_t backend);
 
 FamilyInfo describe_fastconformer(const std::shared_ptr<const ModelFile> & file);
-std::unique_ptr<Engine> load_fastconformer(const std::string & path, ggml_backend_t backend);
+std::unique_ptr<Engine> load_fastconformer(const std::string & path, ggml_backend_t backend, int threads);
 
 FamilyInfo describe_qwen3_asr(const std::shared_ptr<const ModelFile> & file);
-std::unique_ptr<Engine> load_qwen3_asr(const std::string & path, ggml_backend_t backend);
+std::unique_ptr<Engine> load_qwen3_asr(const std::string & path, ggml_backend_t backend, int threads);
 
 FamilyInfo describe_silero_vad(const std::shared_ptr<const ModelFile> & file);
-std::unique_ptr<Engine> load_silero_vad(const std::string & path, ggml_backend_t backend);
+std::unique_ptr<Engine> load_silero_vad(const std::string & path, ggml_backend_t backend, int threads);

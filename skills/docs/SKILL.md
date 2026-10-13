@@ -1,6 +1,6 @@
 ---
 name: docs
-description: Keep speech.cpp's README.md and docs/ current, short and plain, for the people who use speech.cpp. Covers which page describes what, when a change must update a page, what a page holds and leaves out, and what to check before committing. Use when a change alters what a user does or sees (a command, an option, an endpoint, a model, a number), when writing or rewriting a page, or when asked to update, fix, shorten or check the documentation (ドキュメントを更新、README を直す、docs に書く、説明を短く). Not for decision records (docs/adr/), code comments, or what only a developer needs, which goes into the code, AGENTS.md or a skill.
+description: Keep speech.cpp's README.md, its Japanese README.ja.md and docs/ current, short and plain, for the people who use speech.cpp. Covers which page describes what, when a change must update a page, what a page holds and leaves out, and what to check before committing. Use when a change alters what a user does or sees (a command, an option, an endpoint, a model, a number), when writing or rewriting a page, or when asked to update, fix, shorten or check the documentation (ドキュメントを更新、README を直す、docs に書く、説明を短く). Not for decision records (docs/adr/), code comments, or what only a developer needs, which goes into the code, AGENTS.md or a skill.
 ---
 
 # The documentation
@@ -9,6 +9,9 @@ The documentation is for the people who use speech.cpp: from the command line, o
 C API. README.md is the shortest path from install to speech, about 200 lines, and its Documentation table is the
 index. `docs/` has one page per topic, and `docs/models/` one page per family. A page that the README does not link
 does not exist for a reader.
+
+README.ja.md is README.md in Japanese, section for section, with the same links, tables, commands and numbers; the
+pages of `docs/` are English alone. Every change to README.md is made to README.ja.md in the same pull request.
 
 What a developer needs lives elsewhere, where it changes with the work: in the code (each check, converter and dump
 script prints its usage), AGENTS.md, and the skills (add-model, release, windows-check, pull-request). The reasons for a
@@ -52,6 +55,9 @@ because they are short, hold few facts that can go stale, and the change's autho
 - Numbers carry their conditions: the model, the type and the device.
 - No marketing words ("blazing", "seamless", "robust", "powerful") and no filler ("Let's dive in", "In this page we
   will").
+- README.ja.md is written in plain Japanese, in full sentences: commands, code, option names and model names stay as
+  in README.md, and a term Japanese readers already use in English (GGUF, prompt, Realtime) is left in English. A
+  paragraph is one line, because GitHub shows a line break inside a paragraph as a space between Japanese words.
 
 ## Before committing
 
@@ -59,3 +65,4 @@ because they are short, hold few facts that can go stale, and the change's autho
 2. Tables render: every row has as many cells as its header (`gh api /markdown` renders GitHub's way).
 3. README.md stays near 200 lines; if a change pushes it past, move detail to a page.
 4. Commands in the README's quick start run as written against the current catalog.
+5. README.ja.md has the same sections, links, tables, commands and numbers as README.md.

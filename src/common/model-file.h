@@ -68,6 +68,12 @@ public:
               const std::function<bool(const std::string & name)> & keep = {});
     /** Opens and checks the file as above and loads no tensor, for a reader of its metadata alone. */
     ModelFile(const std::string & path, const Layout & layout);
+    /**
+     * A copy onto `backend` of the loaded tensors of `source` whose names `keep` accepts, read from the backend that
+     * holds them and not from the file, which may have changed or gone since `source` read it. It shares the metadata of
+     * `source`.
+     */
+    ModelFile(const ModelFile & source, ggml_backend_t backend, const std::function<bool(const std::string & name)> & keep);
     ModelFile(const ModelFile &) = delete;
     ModelFile & operator=(const ModelFile &) = delete;
 
@@ -93,6 +99,8 @@ public:
      * past the range of int.
      */
     int64_t width(const std::string & name, int axis) const;
+    /** The type of the tensor `name` as the file stores it, whether or not it is loaded; one the file does not hold throws. */
+    ggml_type stored_type(const std::string & name) const;
     /** The number of tensors the file holds. */
     int64_t tensor_count() const;
     float f32(const std::string & key) const;
@@ -147,13 +155,16 @@ private:
     /** "layout 1 of qwen3-tts", or the architecture alone while the layout is not yet read. */
     std::string layout_name() const;
     void check_tensors(const Layout & layout) const;
-    void load(ggml_backend_t backend, const std::function<bool(const std::string & name)> & keep);
+    /** Allocates the tensors whose names `keep` accepts, or every tensor, on `backend`, without their values. */
+    void allocate(ggml_backend_t backend, const std::function<bool(const std::string & name)> & keep);
+    /** Reads the values of the allocated tensors from the file. */
+    void load();
 
     std::string path_, architecture_, remedy_;
     uint32_t version_ = 0;
-    std::unique_ptr<gguf_context, decltype(&gguf_free)> gguf_{nullptr, gguf_free};
+    std::shared_ptr<gguf_context> gguf_;
     /** The shapes and types of every tensor of the file, which ggml reads with its metadata. */
-    std::unique_ptr<ggml_context, decltype(&ggml_free)> ctx_{nullptr, ggml_free};
+    std::shared_ptr<ggml_context> ctx_;
     /** The copies of the tensors a reader keeps, when it keeps only some. */
     std::unique_ptr<ggml_context, decltype(&ggml_free)> kept_{nullptr, ggml_free};
     /** The context of the loaded tensors: ctx_, kept_, or none for a reader of the metadata alone. */

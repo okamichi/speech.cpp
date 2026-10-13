@@ -30,7 +30,7 @@ int main(int argc, char ** argv) {
         bool ok = true;
         {
             const ModelFile model(args[1], backend, layout);
-            const Encoder encoder(model);
+            const Encoder encoder(model, backend);
             // Measured on an Apple M5, the encoder output's lowest SNR: parakeet-tdt_ctc-0.6b-ja (three utterances,
             // 2026-10-05) 113.8 dB on the CPU with F32 weights, 54.6 dB with F16 and 63.1 dB on Metal with either;
             // parakeet-tdt-0.6b-v3 (twelve, 2026-10-06) 105.9, 31.4 and 52.0 dB; reazonspeech-nemo-v2 (eight and two

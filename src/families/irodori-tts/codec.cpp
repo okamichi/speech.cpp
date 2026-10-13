@@ -83,7 +83,11 @@ struct Convolutions {
         return ggml_add(ctx(), ggml_reshape_2d(ctx(), y, out, stride * frames), m.tensor(name + ".bias"));
     }
 
-    /** Snake: x + sin(alpha x)^2 / (alpha + 1e-9). */
+    /**
+     * Snake: x + sin(alpha x)^2 / (alpha + 1e-9). Metal and Vulkan run these five operations as one kernel only in
+     * this order and form, x times alpha first and x added last, with alpha and inv_alpha of [channels] and x
+     * contiguous; any other way of writing them takes five kernels, each a pass over the activations.
+     */
     ggml_tensor * snake(ggml_tensor * x, const std::string & name) {
         ggml_tensor * s = ggml_sin(ctx(), ggml_mul(ctx(), x, m.tensor(name + ".alpha")));
         return ggml_add(ctx(), x, ggml_mul(ctx(), ggml_sqr(ctx(), s), m.tensor(name + ".inv_alpha")));
@@ -97,6 +101,30 @@ struct Convolutions {
     }
 };
 
+/**
+ * The frames of the latent on either side of a frame that the decoder's samples of that frame depend on. From the last
+ * layer to the first, it counts the samples beyond the frame's own that a layer's output depends on: a convolution of
+ * width k and dilation d adds (k - 1) d / 2, and a transposed convolution of stride s, which gives the first half of an
+ * output frame from its input frame and the one before and the second half from it and the one after, turns r samples
+ * beyond its output's into ceil((r + s / 2) / s) beyond its input's.
+ */
+int decoder_reach(const ModelFile & m, const std::vector<int32_t> & rates) {
+    int64_t reach = 0;
+    auto conv = [&](const std::string & name, int64_t dilation) { reach += (m.width(name + ".weight", 2) - 1) * dilation / 2; };
+    conv("codec.dec.conv_out", 1);
+    for (size_t i = rates.size(); i-- > 0;) {
+        const std::string b = "codec.dec.blk." + std::to_string(i);
+        for (int j = 0, dilation = 1; j < kCodecResidualUnits; j++, dilation *= 3) {
+            conv(b + ".res." + std::to_string(j) + ".conv1", dilation);
+            conv(b + ".res." + std::to_string(j) + ".conv2", 1);
+        }
+        reach = (reach + rates[i] / 2 + rates[i] - 1) / rates[i];
+    }
+    conv("codec.dec.conv_in", 1);
+    conv("codec.dec.in_proj", 1);
+    return (int) reach;
+}
+
 }  // namespace
 
 Codec::Codec(const ModelFile & m, ggml_backend_t backend) : backend_(backend), m_(m) {
@@ -106,6 +134,7 @@ Codec::Codec(const ModelFile & m, ggml_backend_t backend) : backend_(backend), m
     encoder_rates_ = m.i32_array("irodori-tts.codec.encoder_rates");
     decoder_rates_ = m.i32_array("irodori-tts.codec.decoder_rates");
     sha256_ = m.str("irodori-tts.codec.sha256");
+    decoder_margin_ = decoder_reach(m, decoder_rates_);
     allocr_ = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend_));
 }
 
@@ -196,7 +225,7 @@ void Codec::decode(const std::vector<float> & latent, int64_t samples, const Win
         }
         const int64_t b = a + window;
         // The margin, and at least two frames, so that the window is long enough to decode.
-        int64_t from = std::max<int64_t>(0, a - kDecoderMargin), to = std::min(frames, b + kDecoderMargin);
+        int64_t from = std::max<int64_t>(0, a - decoder_margin_), to = std::min(frames, b + decoder_margin_);
         if (to - from < 2) from = std::max<int64_t>(0, to - 2);
         const Clock::time_point start = Clock::now();
         Graph g;

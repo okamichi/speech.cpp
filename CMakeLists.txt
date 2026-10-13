@@ -66,6 +66,7 @@ add_library(qwen3tts STATIC
     src/families/qwen3-tts/talker.cpp
     src/families/qwen3-tts/prompt.cpp
     src/families/qwen3-tts/sampler.cpp
+    src/families/qwen3-tts/graph-sampler.cpp
     src/families/qwen3-tts/synthesizer.cpp
 )
 # Code names the family in its includes ("qwen3-tts/codec.h"), since both families have a codec.h.
@@ -78,6 +79,7 @@ add_library(irodoritts STATIC
     src/families/irodori-tts/tokenizer.cpp
     src/families/irodori-tts/text-encoder.cpp
     src/families/irodori-tts/t5gemma-encoder.cpp
+    src/families/irodori-tts/layers.cpp
     src/families/irodori-tts/loudness.cpp
     src/families/irodori-tts/codec.cpp
     src/families/irodori-tts/reference.cpp
@@ -97,6 +99,7 @@ add_library(fastconformer STATIC
     src/families/fastconformer/frontend.cpp
     src/families/fastconformer/encoder.cpp
     src/families/fastconformer/transducer.cpp
+    src/families/fastconformer/decoder-step.cpp
     src/families/fastconformer/decoder.cpp
     src/families/fastconformer/tdt.cpp
     src/families/fastconformer/alsd.cpp
@@ -284,6 +287,11 @@ add_executable(qwen3-tts-sampler-check checks/qwen3-tts/qwen3-tts-sampler-check.
 target_include_directories(qwen3-tts-sampler-check PRIVATE checks tools/common)
 target_link_libraries(qwen3-tts-sampler-check PRIVATE qwen3tts)
 
+# The picks built into a graph against the sampler, on the same cases, on the CPU or a GPU.
+add_executable(qwen3-tts-graph-sampler-check checks/qwen3-tts/qwen3-tts-graph-sampler-check.cpp tools/common/json-reader.cpp)
+target_include_directories(qwen3-tts-graph-sampler-check PRIVATE checks tools/common)
+target_link_libraries(qwen3-tts-graph-sampler-check PRIVATE qwen3tts)
+
 # The tokenizer of a Qwen3-TTS or a Qwen3-ASR file, each its family's.
 add_executable(tokenizer-check checks/common/tokenizer-check.cpp)
 target_link_libraries(tokenizer-check PRIVATE qwen3tts qwen3asr)
@@ -365,6 +373,10 @@ foreach(stage decoder split)
     target_link_libraries(qwen3-asr-${stage}-check PRIVATE qwen3asr)
 endforeach()
 # Times the stages of a recognition on the dumps' audio, against measure/llama-server-timing.py.
+add_executable(fastconformer-timing measure/fastconformer-timing.cpp)
+target_include_directories(fastconformer-timing PRIVATE checks tools/common)
+target_link_libraries(fastconformer-timing PRIVATE fastconformer)
+
 add_executable(qwen3-asr-timing measure/qwen3-asr-timing.cpp tools/common/json-reader.cpp)
 target_include_directories(qwen3-asr-timing PRIVATE checks tools/common)
 target_link_libraries(qwen3-asr-timing PRIVATE qwen3asr)
@@ -373,3 +385,6 @@ target_link_libraries(qwen3-asr-timing PRIVATE qwen3asr)
 add_executable(silero-vad-check checks/silero-vad/silero-vad-check.cpp tools/common/json-reader.cpp)
 target_include_directories(silero-vad-check PRIVATE checks tools/common)
 target_link_libraries(silero-vad-check PRIVATE silerovad)
+
+add_executable(fft-check checks/common/fft-check.cpp)
+target_link_libraries(fft-check PRIVATE speechcommon)

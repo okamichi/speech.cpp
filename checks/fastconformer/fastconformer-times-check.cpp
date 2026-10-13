@@ -5,7 +5,8 @@
 // For a model whose file has breaks (the Japanese models) it then prints the recognizer's segments, with them, and
 // checks that each ends in a break, at a separator that ends a word, or with the last token. The dumps are those of
 // the model, in <reference out dir>/<its general.name>/: the default decoding's times are the dump's own, and another
-// decoding's are in the dump's folder of its name, which dump.py --greedy writes for an RNN-T's greedy decoding.
+// decoding's are in the dump's folder of its name, which dump.py --greedy writes for an RNN-T's greedy decoding. On a
+// GPU each decoding runs twice, on the CPU's copy of its tensors and on the GPU.
 //
 // usage: fastconformer-times-check <model.gguf> <reference out dir> [gpu|cpu|device name]
 
@@ -69,16 +70,26 @@ std::vector<Span> nemo_spans(std::vector<Span> spans, bool steps) {
 }
 
 /**
- * The number of tokens of `d`, whose ids are NeMo's, emitted on another frame than NeMo's or, for TDT, with another
- * duration, printed with the largest difference of frame.
+ * How far a decoding's tokens are from NeMo's: the tokens on another frame or with another duration, and the largest
+ * difference of either, in frames.
  */
-size_t frames_off(const char * what, const Decoding & d, const Npy & timestep, const Npy * duration, bool steps) {
+struct Off {
+    size_t tokens = 0;
+    int64_t largest = 0;
+};
+
+/**
+ * The tokens of `d`, whose ids are NeMo's, emitted on another frame than NeMo's or, for TDT, with another duration,
+ * printed with the largest difference of frame or duration.
+ */
+Off frames_off(const char * what, const Decoding & d, const Npy & timestep, const Npy * duration, bool steps) {
     size_t off = 0;
     int64_t largest = 0;
     for (size_t i = 0; i < d.frames.size(); i++) {
         const int64_t frame = steps ? timestep.i32[i] - (int64_t) i : timestep.i32[i];
-        off += d.frames[i] != frame || (duration && d.durations[i] != duration->i32[i]);
-        largest = std::max(largest, std::abs(d.frames[i] - frame));
+        const int64_t longer = duration ? std::abs((int64_t) d.durations[i] - (int64_t) duration->i32[i]) : 0;
+        off += d.frames[i] != frame || longer != 0;
+        largest = std::max({largest, std::abs(d.frames[i] - frame), longer});
     }
     const char * nemo = steps ? "NeMo's steps less the tokens before each" : "NeMo's";
     if (off == 0) {
@@ -87,15 +98,22 @@ size_t frames_off(const char * what, const Decoding & d, const Npy & timestep, c
         std::printf("  %s: %zu of %zu tokens differ from %s, the farthest by %lld frame%s\n", what, off, d.frames.size(), nemo,
                     (long long) largest, largest == 1 ? "" : "s");
     }
-    return off;
+    return {off, largest};
 }
 
 /**
- * Checks the times of the decoding `name` of a dump's projected encoder output against NeMo's in the folder `from`,
- * printing what differs, and returns whether they are NeMo's.
+ * Checks the times of the decoding `name` of a dump's projected encoder output, computed where `on` says, the CPU's
+ * copy of its tensors or the device's, which is the CPU on the CPU, against NeMo's in the folder `from`, printing what
+ * differs, and returns whether they are NeMo's. A decoding on the CPU with weights in half precision may put a token one
+ * frame from NeMo's, and a TDT token's duration one frame from NeMo's with it, whose spans and the spans of the segments
+ * are then printed and not required; the segments' number and texts are. ggml's CPU backend sums a product of F16
+ * weights in half precision on ARM, and two frames can score within that arithmetic. Measured on an Apple M5 on
+ * 2026-10-13, reazonspeech-nemo-v2's greedy decoding of 9518252661993015549 finds its 16th token on frame 57 by 0.00095
+ * over the blank with F16 weights on the CPU, where with F32 weights the blank wins on frame 57 by 0.011 and the token
+ * comes on frame 58, as in NeMo.
  */
 bool check_times(Recognizer & recognizer, const std::string & dump, const std::vector<float> & projected, const Npy & audio,
-                 const std::filesystem::path & from, const std::string & name) {
+                 const std::filesystem::path & from, const std::string & name, DecodeOn on) {
     const Detokenizer & detokenizer = recognizer.detokenizer();
     const bool tdt = recognizer.model().str("fastconformer.decoder.kind") == "tdt";
     // NeMo's beam search records the step of its search with each token, its greedy decodings the frame.
@@ -113,16 +131,23 @@ bool check_times(Recognizer & recognizer, const std::string & dump, const std::v
     Npy duration;
     if (tdt) duration = read_npy((from / "token_duration.npy").u8string());
     const std::string want_text = dump_text(from / "text.txt");
-    std::printf("%s, %s decoding (%.2f s, %zu tokens, %zu segments)\n", dump.c_str(), name.c_str(),
+    const bool on_cpu = on == DecodeOn::Cpu || recognizer.on_cpu();
+    const bool exact = !on_cpu || recognizer.model().tensor("joint.out.weight")->type == GGML_TYPE_F32;
+    std::printf("%s, %s decoding on the %s (%.2f s, %zu tokens, %zu segments)\n", dump.c_str(), name.c_str(), on_cpu ? "cpu" : "device",
                 (double) audio.f32.size() / recognizer.sample_rate(), want_ids.i32.size(), want_segments.size());
 
     // The decoding from the dump's encoder output.
-    const Decoding decoding = recognizer.decoding(projected, name);
+    const Decoding decoding = recognizer.decoding(projected, name, on);
     if (decoding.ids != want_ids.i32) {
         std::printf("  decoded ids DIFFER from NeMo's\n");
         return false;
     }
-    bool same = frames_off("from the encoder output", decoding, timestep, tdt ? &duration : nullptr, steps) == 0;
+    const Off off = frames_off("from the encoder output", decoding, timestep, tdt ? &duration : nullptr, steps);
+    bool same = exact ? off.tokens == 0 : off.largest <= 1;
+    if (!exact && off.tokens > 0 && off.largest <= 1) {
+        std::printf("    within a frame, as the CPU's half-precision sums allow; the spans below need not be NeMo's\n");
+    }
+    const bool times_required = exact || off.tokens == 0;
     if (steps && !decoding.frames.empty()) {
         const int64_t past = (int64_t) decoding.frames.size() - 1;
         std::printf("    NeMo's last token is %lld frames (%.2f s) past the frame it was emitted on\n", (long long) past,
@@ -139,7 +164,7 @@ bool check_times(Recognizer & recognizer, const std::string & dump, const std::v
                           recognizer.seconds(nemo[i].end) != token_seconds.f64[2 * i + 1];
     }
     std::printf("  token spans: %zu of %zu differ in frames, %zu in seconds\n", spans_differ, nemo.size(), seconds_differ);
-    same = same && spans_differ == 0 && seconds_differ == 0;
+    same = same && (!times_required || (spans_differ == 0 && seconds_differ == 0));
 
     // The tokens' texts and the segments the separators give, as NeMo's.
     const std::vector<std::string> texts = detokenizer.token_texts(decoding.ids);
@@ -147,16 +172,19 @@ bool check_times(Recognizer & recognizer, const std::string & dump, const std::v
     std::string joined;
     for (const std::string & t : texts) joined += t;
     const std::vector<Segment> segs = segments(texts, word_starts, nemo, separators, {});
-    bool same_segments = joined == want_text && segs.size() == want_segments.size();
-    for (size_t k = 0; same_segments && k < segs.size(); k++) {
-        same_segments = segs[k].span.start == segment_offsets.i32[2 * k] && segs[k].span.end == segment_offsets.i32[2 * k + 1] &&
+    // The segments' number and texts are required whatever the times; their spans only where the times are.
+    bool segment_texts = joined == want_text && segs.size() == want_segments.size(), segment_times = segs.size() == want_segments.size();
+    for (size_t k = 0; segs.size() == want_segments.size() && k < segs.size(); k++) {
+        segment_texts = segment_texts && without_spaces(segs[k].text) == without_spaces(want_segments[k]);
+        segment_times = segment_times && segs[k].span.start == segment_offsets.i32[2 * k] && segs[k].span.end == segment_offsets.i32[2 * k + 1] &&
                         recognizer.seconds(segs[k].span.start) == segment_seconds.f64[2 * k] &&
-                        recognizer.seconds(segs[k].span.end) == segment_seconds.f64[2 * k + 1] &&
-                        without_spaces(segs[k].text) == without_spaces(want_segments[k]);
+                        recognizer.seconds(segs[k].span.end) == segment_seconds.f64[2 * k + 1];
     }
-    std::printf("  token texts %s; segments with the file's separators %s\n", joined == want_text ? "make the text" : "DO NOT make the text",
-                same_segments ? "equal" : "DIFFER");
-    if (!same_segments) {
+    const bool same_segments = segment_texts && (!times_required || segment_times);
+    std::printf("  token texts %s; segments with the file's separators: texts %s, times %s\n",
+                joined == want_text ? "make the text" : "DO NOT make the text", segment_texts ? "equal" : "DIFFER",
+                segment_times ? "equal" : "DIFFER");
+    if (!segment_texts || !segment_times) {
         for (const Segment & s : segs) std::printf("    got  %lld-%lld %s\n", (long long) s.span.start, (long long) s.span.end, s.text.c_str());
         for (size_t k = 0; k < want_segments.size(); k++) {
             std::printf("    want %d-%d %s\n", segment_offsets.i32[2 * k], segment_offsets.i32[2 * k + 1], want_segments[k].c_str());
@@ -169,7 +197,7 @@ bool check_times(Recognizer & recognizer, const std::string & dump, const std::v
     // an Apple M5 on 2026-10-06, the 17th token of reazonspeech-nemo-v2's 9518252661993015549 is on frame 58 with a
     // log-probability of -1.4191 and on frame 57 with -1.4258 on the CPU in float32; from Metal's encoder with F16
     // weights, -1.4225 and -1.4210, and it goes on 57.
-    const Transcript path = recognizer.recognize(audio.f32, name);
+    const Transcript path = recognizer.recognize(audio.f32, name, on);
     if (path.decoding.ids == want_ids.i32) {
         frames_off("from the audio", path.decoding, timestep, tdt ? &duration : nullptr, steps);
     } else {
@@ -207,7 +235,7 @@ int main(int argc, char ** argv) {
         std::printf("backend: %s\n", ggml_backend_name(backend));
         bool ok = true;
         {
-            Recognizer recognizer(args[1], backend);
+            Recognizer recognizer(args[1], backend, default_threads());
             ggml_gallocr_t allocr = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
             for (const auto & d : reference_dumps(args[2], recognizer.model())) {
                 const Npy encoded = read_npy((d / "encoded.npy").u8string());
@@ -220,7 +248,10 @@ int main(int argc, char ** argv) {
                 const std::vector<std::string> & decodings = recognizer.decodings();
                 for (size_t k = 0; k < decodings.size(); k++) {
                     const std::filesystem::path from = k == 0 ? d : d / std::filesystem::u8path(decodings[k]);
-                    ok = check_times(recognizer, d.filename().u8string(), dump_projected, audio, from, decodings[k]) && ok;
+                    ok = check_times(recognizer, d.filename().u8string(), dump_projected, audio, from, decodings[k], DecodeOn::Cpu) && ok;
+                    if (!recognizer.on_cpu()) {
+                        ok = check_times(recognizer, d.filename().u8string(), dump_projected, audio, from, decodings[k], DecodeOn::Device) && ok;
+                    }
                 }
             }
             ggml_gallocr_free(allocr);

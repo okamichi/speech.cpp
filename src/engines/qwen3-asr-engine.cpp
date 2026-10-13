@@ -64,6 +64,6 @@ FamilyInfo describe_qwen3_asr(const std::shared_ptr<const ModelFile> &) {
     return info;
 }
 
-std::unique_ptr<Engine> load_qwen3_asr(const std::string & path, ggml_backend_t backend) {
+std::unique_ptr<Engine> load_qwen3_asr(const std::string & path, ggml_backend_t backend, int) {
     return std::make_unique<Qwen3AsrEngine>(path, backend);
 }
