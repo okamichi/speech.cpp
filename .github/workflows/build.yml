@@ -276,7 +276,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          latest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          latest=$(gh release view --repo nyosegawa/speech.cpp --json tagName -q .tagName)
           home="$RUNNER_TEMP/home"
           mkdir -p "$home"
           HOME="$home" sh install.sh --version 0.7.0 --no-modify-path
