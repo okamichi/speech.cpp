@@ -5,7 +5,7 @@
 import * as api from './api.js';
 import { AudioInput } from './audio-input.js';
 import { scriptLanguage } from './languages.js';
-import { OptionForm } from './options.js';
+import { OptionForm, withServerDefaults } from './options.js';
 import { Player } from './player.js';
 import { save } from './wav.js';
 import { Waveform } from './waveform.js';
@@ -70,7 +70,7 @@ export class SpeakPanel {
       return;
     }
     const kept = this.#options?.values() ?? {};
-    this.#options = new OptionForm(held.model, $('speak-options'), $('speak-more'));
+    this.#options = new OptionForm(withServerDefaults(held), $('speak-options'), $('speak-more'));
     this.#options.restore(kept);
     this.#options.suggestVoice(scriptLanguage($('speak-text').value));
   }

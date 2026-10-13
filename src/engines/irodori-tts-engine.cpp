@@ -219,7 +219,7 @@ FamilyInfo describe_irodori_tts(const std::shared_ptr<const ModelFile> & file) {
     return info;
 }
 
-std::unique_ptr<Engine> load_irodori_tts(const std::string & path, ggml_backend_t backend) {
+std::unique_ptr<Engine> load_irodori_tts(const std::string & path, ggml_backend_t backend, int) {
     return std::make_unique<IrodoriTtsEngine>(path, backend);
 }
 

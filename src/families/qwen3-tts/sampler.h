@@ -4,6 +4,7 @@
 #include <random>
 #include <vector>
 
+#include "error.h"
 #include "model-file.h"
 
 /** Sampling settings of one stack; the defaults leave the distribution as it is. */
@@ -14,6 +15,11 @@ struct SamplingParams {
     int top_k = 0;
     float top_p = 1.0f;
     float repetition_penalty = 1.0f;
+
+    bool operator==(const SamplingParams & o) const {
+        return greedy == o.greedy && temperature == o.temperature && top_k == o.top_k && top_p == o.top_p &&
+               repetition_penalty == o.repetition_penalty;
+    }
 };
 
 /**
@@ -52,9 +58,30 @@ Candidates candidates(const std::vector<float> & logits, const SamplingParams & 
                       const std::vector<bool> & banned);
 
 /**
+ * A number in [0, 1] from the next 64 bits of `rng`, rounded to a double; the largest draws round to 1. It is defined
+ * here rather than by a distribution of the standard library, whose results differ between libc++, libstdc++ and
+ * Microsoft's, so that a seed draws the same numbers on every platform.
+ */
+double uniform(std::mt19937_64 & rng);
+
+/**
+ * The index of the first weight whose cumulative share of the sum passes `u`, the last where none does (u of 1):
+ * the shares are the weights divided by their sum, accumulated in order in double.
+ */
+int pick(const std::vector<double> & weights, double u);
+
+/**
  * Picks a token the way transformers' generate() does: the argmax of the logits with the repetition penalty on the
- * tokens in `history` and the tokens in `banned` removed, or a draw from candidates(). A penalty that pushes the
- * largest logit beyond a float throws an Error naming "repetition_penalty" in either case.
+ * tokens in `history` and the tokens in `banned` removed, or a draw from candidates(), which pick()s with `u` from the
+ * candidates' weights; a greedy pick leaves `u` unused. A penalty that pushes the largest logit beyond a float throws an
+ * Error naming "repetition_penalty" in either case.
  */
 int32_t sample(const std::vector<float> & logits, const SamplingParams & p, const std::vector<int32_t> & history,
+               const std::vector<bool> & banned, double u);
+
+/** sample() with the next uniform() of `rng` where `p` draws, and no number of it where `p` is greedy. */
+int32_t sample(const std::vector<float> & logits, const SamplingParams & p, const std::vector<int32_t> & history,
                const std::vector<bool> & banned, std::mt19937_64 & rng);
+
+/** The Error of a temperature that pushes the largest logit beyond the range of a float, naming "temperature". */
+Error temperature_overflow(float temperature);

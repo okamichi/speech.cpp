@@ -9,6 +9,7 @@
 #include "detokenizer.h"
 #include "encoder.h"
 #include "frontend.h"
+#include "ggml-cpu.h"
 #include "model-file.h"
 #include "times.h"
 #include "transducer.h"
@@ -21,10 +22,23 @@ struct Transcript {
     std::string text;
 };
 
-/** A FastConformer checkpoint with a TDT or an RNN-T decoder, from audio to text on one backend. */
+/**
+ * Where a decoding computes: on the CPU, from a copy of the tensors it reads there, or on the device the model is on.
+ * Each step of a decoding is a small graph whose round trip to a GPU costs more than computing it on the CPU.
+ */
+enum class DecodeOn { Cpu, Device };
+
+/**
+ * A FastConformer checkpoint with a TDT or an RNN-T decoder, from audio to text on one backend, and, for a model on
+ * another device than the CPU, the tensors its decodings read on the CPU too.
+ */
 class Recognizer {
 public:
-    Recognizer(const std::string & path, ggml_backend_t backend);
+    /**
+     * Loads the model at `path` onto `backend`. When `backend` is not the CPU, the first decoding on the CPU copies the
+     * tensors of decoding_tensor() from it onto a CPU backend of its own that computes with `threads` threads.
+     */
+    Recognizer(const std::string & path, ggml_backend_t backend, int threads);
     ~Recognizer();
     Recognizer(const Recognizer &) = delete;
     Recognizer & operator=(const Recognizer &) = delete;
@@ -32,8 +46,8 @@ public:
     /** The names of the model's decodings, the default first (fastconformer::decodings()). */
     const std::vector<std::string> & decodings() const { return decoding_names_; }
 
-    /** The text of mono samples at sample_rate(), decoded with the decoding of decodings() named `name`. */
-    Transcript recognize(const std::vector<float> & samples, const std::string & name);
+    /** The text of mono samples at sample_rate(), decoded with the decoding of decodings() named `name` where `on` says. */
+    Transcript recognize(const std::vector<float> & samples, const std::string & name, DecodeOn on = DecodeOn::Cpu);
     /** The same with the default decoding. */
     Transcript recognize(const std::vector<float> & samples) { return recognize(samples, decodings().front()); }
 
@@ -42,16 +56,15 @@ public:
 
     /**
      * The tokens of encode()'s output with the frames they were emitted on, by the decoding of decodings() named
-     * `name`, telling `progress` how far it has come.
+     * `name`, computed where `on` says, telling `progress` how far it has come.
      */
-    Decoding decoding(const std::vector<float> & projected, const std::string & name, const DecodingProgress & progress = {}) const {
-        return decoder(name).decode(projected, backend_, progress);
-    }
+    Decoding decoding(const std::vector<float> & projected, const std::string & name, DecodeOn on = DecodeOn::Cpu,
+                      const DecodingProgress & progress = {});
     /** The same with the default decoding. */
-    Decoding decoding(const std::vector<float> & projected) const { return decoding(projected, decodings().front()); }
+    Decoding decoding(const std::vector<float> & projected) { return decoding(projected, decodings().front()); }
 
     /** The token ids of encode()'s output, by the default decoding. */
-    std::vector<int32_t> decode(const std::vector<float> & projected) const { return decoding(projected).ids; }
+    std::vector<int32_t> decode(const std::vector<float> & projected) { return decoding(projected).ids; }
 
     /**
      * The time in seconds of encoder frame `frame` as process_timestamp_outputs() computes it: the frame times the
@@ -71,22 +84,63 @@ public:
     const ModelFile & model() const { return model_; }
     const Frontend & frontend() const { return frontend_; }
     const Encoder & encoder() const { return encoder_; }
-    const PredictionNetwork & prediction() const { return prediction_; }
-    const Joint & joint() const { return joint_; }
-    /** The decoding of decodings() named `name`. */
-    const Decoder & decoder(const std::string & name) const;
+    /** The prediction network and the joint on the model's device. */
+    const PredictionNetwork & prediction() const { return device_.prediction; }
+    const Joint & joint() const { return device_.joint; }
+    /** The decoding of decodings() named `name` on the model's device. */
+    const Decoder & decoder(const std::string & name) const { return device_.decoder(name); }
     const Detokenizer & detokenizer() const { return detokenizer_; }
+    /** Whether the model is on the CPU, where DecodeOn::Device decodes too. */
+    bool on_cpu() const { return on_cpu_; }
 
 private:
+    /** The prediction network, the joint and the decoders of decodings() over the tensors of one model file. */
+    struct Transducer {
+        Transducer(const ModelFile & m, const std::vector<std::string> & names);
+        Transducer(const Transducer &) = delete;
+        Transducer & operator=(const Transducer &) = delete;
+        const Decoder & decoder(const std::string & name) const;
+
+        PredictionNetwork prediction;
+        Joint joint;
+        const std::vector<std::string> & names;
+        /** The decoders of `names`, in their order. */
+        std::vector<std::unique_ptr<Decoder>> decoders;
+    };
+
+    /**
+     * The CPU's backend and its copy of the tensors of decoding_tensor(), with the decoders over them. The backend
+     * computes with threads of its own that wait between graphs, where ggml's CPU backend otherwise starts and joins
+     * its threads for every graph: on an Apple M5 with reazonspeech-nemo-v2 in Q8_0 on Metal, recognitions of 6, 26 and
+     * 28 s by beam search took 89, 357 and 410 ms with 4 such threads, 109, 420 and 422 ms with 4 threads started for
+     * each graph, 116, 451 and 504 ms with 1 thread, and 119, 446 and 526 ms decoding on Metal (2026-10-13, medians).
+     */
+    struct OnCpu {
+        OnCpu(const ModelFile & device, int threads, const std::vector<std::string> & names);
+
+        std::unique_ptr<ggml_threadpool, decltype(&ggml_threadpool_free)> pool;
+        std::unique_ptr<ggml_backend, decltype(&ggml_backend_free)> backend;
+        ModelFile model;
+        Transducer transducer;
+    };
+
+    /** The copy of the decoding's tensors on the CPU, made when a decoding first computes there. */
+    OnCpu & cpu();
+
     ggml_backend_t backend_;
+    bool on_cpu_;
+    int threads_;
     ModelFile model_;
     Frontend frontend_;
     Encoder encoder_;
-    PredictionNetwork prediction_;
-    Joint joint_;
     std::vector<std::string> decoding_names_;
-    /** The decoders of decoding_names_, in their order. */
-    std::vector<std::unique_ptr<Decoder>> decoders_;
+    Transducer device_;
+    /**
+     * None for a model on the CPU, whose decodings compute on its own tensors, and for a model on another device until
+     * a decoding first computes on the CPU: the copy takes the host's memory, 35 MB for parakeet-tdt-0.6b-v3's F16
+     * file, which a model whose requests decode on its device never reads.
+     */
+    std::unique_ptr<OnCpu> cpu_;
     Detokenizer detokenizer_;
     std::vector<std::string> separators_, breaks_;
     ggml_gallocr_t allocr_;

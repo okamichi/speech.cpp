@@ -60,7 +60,15 @@ Decoding AlsdDecoder::decode(const std::vector<float> & projected, ggml_backend_
     // the same state, which gives the same output.
     std::map<std::vector<int32_t>, std::shared_ptr<const Prediction>> cache;
     using Hypotheses = std::vector<std::shared_ptr<Hypothesis>>;
-    Hypotheses beam_hyps{std::make_shared<Hypothesis>(Hypothesis{{blank_}, {}, 0.0, nullptr})}, finished;
+    Hypotheses beam_hyps{std::make_shared<Hypothesis>(Hypothesis{{blank_}, {}, 0.0, nullptr})};
+    // NeMo keeps every finished hypothesis and returns the first of them in a stable sort by this key, so the search
+    // keeps only the best so far, which a later one replaces with a larger key alone. A finished hypothesis' score is
+    // final once its step has merged the beam: it is never active again, and later steps merge only their own. Keeping
+    // all of them raised the peak footprint of reazonspeech-nemo-v2's 311 s input in Q8_0, whose search then runs to its
+    // last step, from 1.84 to 2.11 GB on the CPU of an Apple M5 and from 1.01 to 1.26 GB on Metal decoding on the CPU
+    // (2026-10-13).
+    auto key = [&](const Hypothesis & h) { return score_norm_ ? h.score / (double) h.labels.size() : h.score; };
+    std::shared_ptr<Hypothesis> finished;
     std::vector<double> logp((size_t) outputs);
     std::vector<int> tokens((size_t) blank_);
     // The frame the search has passed for every hypothesis, which only rises.
@@ -114,7 +122,7 @@ Decoding AlsdDecoder::decode(const std::vector<float> & projected, ggml_backend_
         }
         const std::vector<float> out = Graph::read(logits);
 
-        Hypotheses expanded;
+        Hypotheses expanded, finishing;
         for (size_t j = 0; j < n; j++) {
             const Hypothesis & h = *active[j];
             const float * row = &out[j * (size_t) outputs];
@@ -125,7 +133,7 @@ Decoding AlsdDecoder::decode(const std::vector<float> & projected, ggml_backend_
 
             auto blank = std::make_shared<Hypothesis>(Hypothesis{h.labels, h.frames, h.score + logp[(size_t) blank_], h.from});
             expanded.push_back(blank);
-            if (at[j] == frames - 1) finished.push_back(blank);
+            if (at[j] == frames - 1) finishing.push_back(blank);
             // topk() over the tokens: the largest first, and the lower id first between equal ones.
             for (int c = 0; c < blank_; c++) tokens[(size_t) c] = c;
             std::partial_sort(tokens.begin(), tokens.begin() + beam, tokens.end(),
@@ -158,15 +166,12 @@ Decoding AlsdDecoder::decode(const std::vector<float> & projected, ggml_backend_
             if (it != cache.end()) kept.insert(*it);
         }
         cache.swap(kept);
+        for (const auto & h : finishing) {
+            if (!finished || key(*h) > key(*finished)) finished = h;
+        }
     }
 
-    const Hypotheses & candidates = finished.empty() ? beam_hyps : finished;
-    std::vector<std::shared_ptr<Hypothesis>> ranked = candidates;
-    if (!finished.empty()) {
-        auto key = [&](const Hypothesis & h) { return score_norm_ ? h.score / (double) h.labels.size() : h.score; };
-        std::stable_sort(ranked.begin(), ranked.end(), [&](const auto & a, const auto & b) { return key(*a) > key(*b); });
-    }
-    const Hypothesis & best = *ranked.front();
+    const Hypothesis & best = finished ? *finished : *beam_hyps.front();
     return Decoding{std::vector<int32_t>(best.labels.begin() + 1, best.labels.end()), best.frames, {}, graphs};
 }
 

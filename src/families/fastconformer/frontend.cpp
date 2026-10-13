@@ -66,7 +66,8 @@ std::vector<float> Frontend::features(const std::vector<float> & samples) const 
     const int bins = n_fft_ / 2 + 1;
     const int64_t n = (int64_t) x.size();
     std::vector<double> mel((size_t) (frames * mels_));
-    std::vector<std::complex<double>> frame(n_fft_), spectrum(n_fft_);
+    std::vector<double> frame(n_fft_);
+    std::vector<std::complex<double>> spectrum(bins);
     std::vector<double> power(bins);
     for (int64_t f = 0; f < frames; f++) {
         // center=True with pad_mode="constant": the signal has n_fft / 2 zeros before it.

@@ -61,7 +61,8 @@ std::vector<float> Frontend::features(const std::vector<float> & samples) const 
     const int64_t frames = this->frames(samples.size()), n = (int64_t) x.size();
     const int bins = n_fft_ / 2 + 1;
     std::vector<double> mel((size_t) (frames * mels_));
-    std::vector<std::complex<double>> frame(n_fft_), spectrum(n_fft_);
+    std::vector<double> frame(n_fft_);
+    std::vector<std::complex<double>> spectrum(bins);
     std::vector<double> power(bins);
     double largest = -INFINITY;
     for (int64_t f = 0; f < frames; f++) {

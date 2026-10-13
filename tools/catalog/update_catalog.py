@@ -24,6 +24,9 @@ import urllib.request
 CATALOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalog.json")
 CHOSEN = ["name", "repository", "type", "start"]
 TASKS = ["synthesis", "recognition", "detection"]
+# A model's files in the order `speech models` and the page list them: the type its name alone means, then the others
+# from the widest.
+WIDEST_FIRST = ["f32", "f16", "q8_0", "q6_k", "q5_k", "q4_k"]
 
 
 def fetch_json(url):
@@ -56,6 +59,10 @@ def pin(model):
         raise SystemExit(f"{repository} holds two files of one type: {types}")
     if model["type"] not in types:
         raise SystemExit(f"{model['name']}: its type {model['type']} is not among the repository's, {types}")
+    unknown = sorted(set(types) - set(WIDEST_FIRST))
+    if unknown:
+        raise SystemExit(f"{repository} holds a file of a type the catalog does not order: {unknown}")
+    files.sort(key=lambda f: (f["type"] != model["type"], WIDEST_FIRST.index(f["type"])))
     task, languages, voice_files = about[0]
     if task not in TASKS:
         raise SystemExit(f"{repository}: a task {task!r}")

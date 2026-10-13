@@ -1,7 +1,8 @@
 // Checks FastConformer's transducer, RNN-T or TDT, against NeMo on each dump of reference/fastconformer/dump.py, in
 // the order data flows: the prediction network on the dump's labels, the joint on the dump's encoder frames and
 // prediction outputs, each decoding of the model and the detokenization from the dump's encoder output, then the
-// whole path from the dump's audio to the text, which it also times with the graphs each decoding computes. The
+// whole path from the dump's audio to the text, which it also times with the graphs each decoding computes. On a GPU
+// each decoding runs twice, on the CPU's copy of its tensors and on the GPU. The
 // dumps are those of the model, in <reference out dir>/<its general.name>/: the model's default decoding is checked
 // against the dump's own tokens and text, and each other one against those in the dump's folder of its name, which
 // dump.py --greedy writes for an RNN-T's greedy decoding.
@@ -80,12 +81,15 @@ int main(int argc, char ** argv) {
         std::printf("backend: %s\n", ggml_backend_name(backend));
         bool ok = true;
         {
-            Recognizer recognizer(args[1], backend);
+            Recognizer recognizer(args[1], backend, default_threads());
             const PredictionNetwork & prediction = recognizer.prediction();
             const Joint & joint = recognizer.joint();
             const std::vector<std::string> & decodings = recognizer.decodings();
             const int hidden = prediction.hidden(), outputs = joint.outputs(), blank = recognizer.decoder(decodings.front()).blank();
             const bool tdt = recognizer.model().str("fastconformer.decoder.kind") == "tdt";
+            std::vector<DecodeOn> places{DecodeOn::Cpu};
+            if (!recognizer.on_cpu()) places.push_back(DecodeOn::Device);
+            auto place_name = [](DecodeOn on) { return on == DecodeOn::Cpu ? "cpu" : "device"; };
             ggml_gallocr_t allocr = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
             for (const auto & d : reference_dumps(args[2], recognizer.model())) {
                 const Npy encoded = read_npy((d / "encoded.npy").u8string());
@@ -163,17 +167,22 @@ int main(int argc, char ** argv) {
                 e.compute(backend, allocr);
                 const std::vector<float> dump_projected = Graph::read(projected);
                 for (size_t k = 0; k < decodings.size(); k++) {
-                    const Decoding decoding = recognizer.decoding(dump_projected, decodings[k]);
-                    const std::string text = recognizer.detokenizer().text(decoding.ids);
-                    std::printf("  %s decoding: ids %s, text %s, %zu graphs\n", decodings[k].c_str(), decoding.ids == want_ids[k] ? "equal" : "DIFFER",
-                                text == want_text[k] ? "equal" : "DIFFERS", decoding.graphs);
-                    if (decoding.ids != want_ids[k]) std::printf("    got%s\n    want%s\n", ids_text(decoding.ids).c_str(), ids_text(want_ids[k]).c_str());
-                    if (text != want_text[k]) std::printf("    got  %s\n    want %s\n", text.c_str(), want_text[k].c_str());
-                    ok = ok && decoding.ids == want_ids[k] && text == want_text[k];
+                    for (const DecodeOn on : places) {
+                        const Decoding decoding = recognizer.decoding(dump_projected, decodings[k], on);
+                        const std::string text = recognizer.detokenizer().text(decoding.ids);
+                        std::printf("  %s decoding on the %s: ids %s, text %s, %zu graphs\n", decodings[k].c_str(), place_name(on),
+                                    decoding.ids == want_ids[k] ? "equal" : "DIFFER", text == want_text[k] ? "equal" : "DIFFERS", decoding.graphs);
+                        if (decoding.ids != want_ids[k]) {
+                            std::printf("    got%s\n    want%s\n", ids_text(decoding.ids).c_str(), ids_text(want_ids[k]).c_str());
+                        }
+                        if (text != want_text[k]) std::printf("    got  %s\n    want %s\n", text.c_str(), want_text[k].c_str());
+                        ok = ok && decoding.ids == want_ids[k] && text == want_text[k];
+                    }
                 }
 
                 // The whole path with each decoding, timed after a first run that builds Metal's pipelines.
                 for (const std::string & name : decodings) recognizer.recognize(audio.f32, name);
+                for (const std::string & name : decodings) recognizer.decoding(dump_projected, name, DecodeOn::Device);
                 const auto t0 = Clock::now();
                 const std::vector<float> features = recognizer.frontend().features(audio.f32);
                 const auto t1 = Clock::now();
@@ -181,15 +190,17 @@ int main(int argc, char ** argv) {
                 const auto t2 = Clock::now();
                 std::printf("  audio to text: frontend %.1f ms, encoder %.1f ms\n", ms(t0, t1), ms(t1, t2));
                 for (size_t k = 0; k < decodings.size(); k++) {
-                    const auto t3 = Clock::now();
-                    const Decoding decoding = recognizer.decoding(path_projected, decodings[k]);
-                    const auto t4 = Clock::now();
-                    const std::string text = recognizer.detokenizer().text(decoding.ids);
-                    std::printf("    %s decoding: ids %s, text %s; %.1f ms, %zu graphs\n", decodings[k].c_str(),
-                                decoding.ids == want_ids[k] ? "equal" : "DIFFER", text == want_text[k] ? "equal" : "DIFFERS", ms(t3, t4),
-                                decoding.graphs);
-                    if (text != want_text[k]) std::printf("      got  %s\n      want %s\n", text.c_str(), want_text[k].c_str());
-                    ok = ok && text == want_text[k];
+                    for (const DecodeOn on : places) {
+                        const auto t3 = Clock::now();
+                        const Decoding decoding = recognizer.decoding(path_projected, decodings[k], on);
+                        const auto t4 = Clock::now();
+                        const std::string text = recognizer.detokenizer().text(decoding.ids);
+                        std::printf("    %s decoding on the %s: ids %s, text %s; %.1f ms, %zu graphs\n", decodings[k].c_str(), place_name(on),
+                                    decoding.ids == want_ids[k] ? "equal" : "DIFFER", text == want_text[k] ? "equal" : "DIFFERS", ms(t3, t4),
+                                    decoding.graphs);
+                        if (text != want_text[k]) std::printf("      got  %s\n      want %s\n", text.c_str(), want_text[k].c_str());
+                        ok = ok && text == want_text[k];
+                    }
                 }
             }
             ggml_gallocr_free(allocr);

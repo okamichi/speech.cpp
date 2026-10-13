@@ -24,9 +24,12 @@ code: a release ships the files it was checked with.
 speech-bench (github.com/nyosegawa/speech-bench) measures accuracy and speed across runtimes.
 
 - Add the model to its catalog, pinned by revision and SHA-256, with the other runtimes that run it.
+- When its `adapters/` has none for the model's official implementation, add one: a uv project that pins the official
+  code by commit and PyTorch and the rest by `uv.lock`, as `reference/<family>/` does, and runs on MPS on macOS and on
+  CUDA on Windows.
 - Recognition: Common Voice 8.0 Japanese (CER and CER with accepted spellings) and FLEURS. Synthesis: 20 sentences with a
-  fixed voice and seed; time to first audio (median and p90), RTF, CER of a transcription, voice similarity, gaps and
-  start-up time.
+  fixed voice and seed; time to first audio (p50, p90 and p99), RTFx, CER of a transcription, voice similarity, gaps and
+  load time. Both: peak memory, and VRAM on Windows, as the release skill measures them.
 - Compare with the official implementation and the other runtimes on the same day, under the same conditions, with
   nothing else running. A release candidate is measured from a local build (`SPEECH_BENCH_SPEECH_CPP`).
 - Never publish measurements of private recordings.

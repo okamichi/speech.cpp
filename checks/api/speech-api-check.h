@@ -123,7 +123,12 @@ int collect(const float * samples, size_t n, void * user_data);
 /** A request of `text` in `voice` (NULL for none) with `seed` (negative for none); a failure ends the process. */
 speech_request * new_request(speech_model * model, const char * text, const char * voice, int64_t seed);
 
-/** Runs `r`, collecting its audio, and returns its status; the request is freed. */
+/**
+ * Runs `r`, appending its audio to `audio`, and returns its status; the request is freed. A result that counts other
+ * samples than this request passed to the callback is a failure, returned as SPEECH_ERROR_INTERNAL, which no check
+ * expects, rather than an exit: main then frees the model, where an exit with the model loaded makes ggml's Metal
+ * backend abort on the residency sets it still holds.
+ */
 speech_status speak(speech_request * r, Audio * audio, speech_stop * stop, int64_t * seed);
 
 /**

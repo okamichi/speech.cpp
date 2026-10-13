@@ -61,7 +61,10 @@ struct TranscriptionRequest {
     std::vector<RequestOption> options;
     /** Whether the options set timestamps, so that the answer carries the segments. */
     bool timestamps = false;
-    /** With chunking_strategy, the detection options of transcription by regions; without it, nothing. */
+    /**
+     * With chunking_strategy, the members of server_vad it gives as detection options, which region_options() completes
+     * with the detection model's defaults; without it, nothing.
+     */
     std::optional<std::vector<RequestOption>> regions;
 };
 

@@ -45,11 +45,12 @@ struct Region {
 std::pair<size_t, size_t> region_samples(const Region & region, int rate, size_t n);
 
 /**
- * The detection options of transcription by regions, `given` in place of the defaults: OpenAI's server_vad defaults
- * (threshold 0.5, speech_pad_ms 300 for its prefix_padding_ms, min_silence_duration_ms 500 for its
- * silence_duration_ms) and a longest region, max_speech_duration_s, which its form has no member for.
+ * The detection options of transcription by regions: `given`, then the detection model's `defaults` from the command
+ * line that started the program, then OpenAI's server_vad defaults (threshold 0.5, speech_pad_ms 300 for its
+ * prefix_padding_ms, min_silence_duration_ms 500 for its silence_duration_ms) and a longest region,
+ * max_speech_duration_s, which its form has no member for.
  */
-std::vector<RequestOption> region_options(const std::vector<RequestOption> & given);
+std::vector<RequestOption> region_options(const std::vector<RequestOption> & given, const std::vector<RequestOption> & defaults = {});
 
 /** A detection request on `detector` with the audio and the options set, which the library checks as they are set. */
 Request detection_request(speech_model * detector, const std::vector<float> & samples, int rate, const std::vector<RequestOption> & options);

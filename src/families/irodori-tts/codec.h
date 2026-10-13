@@ -108,14 +108,14 @@ public:
 
     /** The frames on each side of a window that the encoder's receptive field reaches. */
     static constexpr int kEncoderMargin = 8;
-    /** The same for the decoder, whose receptive field reaches about 7.7 frames. */
-    static constexpr int kDecoderMargin = 10;
+    /** The frames on each side of a window that the decoder's receptive field reaches, which its layers give. */
+    int decoder_margin() const { return decoder_margin_; }
 
 private:
     ggml_backend_t backend_;
     const ModelFile & m_;
     ggml_gallocr_t allocr_ = nullptr;
-    int sample_rate_ = 0, hop_ = 0, latent_dim_ = 0;
+    int sample_rate_ = 0, hop_ = 0, latent_dim_ = 0, decoder_margin_ = 0;
     std::string sha256_;
     std::vector<int32_t> encoder_rates_, decoder_rates_;
 };

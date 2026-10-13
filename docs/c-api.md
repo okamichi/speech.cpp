@@ -239,16 +239,20 @@ it concerns (an option's name, `text`, `audio`, `device`, `threads`, `name`, `pa
   until `speech_request_free()`, the version, a device's and a name's (`speech_option_name()`, `speech_status_name()`,
   `speech_stop_name()`) as long as the process, and the error message until the next call on the thread. Nothing the
   caller passes is kept after the call.
+- **Freeing before the process ends.** Free every request and detection, then every model, before the program returns
+  from `main()` or calls `exit()`. On Metal, a process that ends with a model still loaded aborts as it ends (exit
+  status 134, `GGML_ASSERT([rsets->data count] == 0)`), after its work is done. A binding frees its models when the
+  program shuts down, such as from Python's `atexit`, not only when they are collected.
 - **Threads.** A model serves one request at a time; requests that several threads run on the same model wait for each
   other and for the pushes of its detections. A request is used by one thread at a time, but `speech_request_cancel()`
   may be called from any thread; a detection is used by one thread at a time. Information never changes once made and
   may be read from any thread. Separate models are independent.
-- **Versions.** `speech_version()` gives the release the library was built from (`"0.8.2"`). `SPEECH_API_VERSION_MAJOR`
+- **Versions.** `speech_version()` gives the release the library was built from (`"0.8.4"`). `SPEECH_API_VERSION_MAJOR`
   and `SPEECH_API_VERSION_MINOR`, and `speech_api_version_major()` and `speech_api_version_minor()` for a caller that
-  loads the library at run time, give the API's version, 3.1. The major rises when a declaration changes in a way an
+  loads the library at run time, give the API's version, 4.0. The major rises when a declaration changes in a way an
   existing caller notices, and the minor when a function, an option or an enum value is added. A program built against
   M.m runs against a library of the same major version and a minor version of m or more. The shared library's SOVERSION
-  is the major version (`libspeech.3.dylib`, `libspeech.so.3`).
+  is the major version (`libspeech.4.dylib`, `libspeech.so.4`).
 
 ## Options
 
@@ -267,6 +271,7 @@ Each model takes some of them, with ranges and defaults from its file, and `spee
 | `timestamps` | bool | false | [FastConformer](models/fastconformer.md#options) |
 | `prompt` | string | `""` | [Qwen3-ASR](models/qwen3-asr.md#options) |
 | `decoding` | string | none | reazonspeech-nemo-v2 |
+| `decode_on_cpu` | bool | none | FastConformer |
 | `do_sample`, `top_k`, `top_p`, `temperature`, `repetition_penalty` | bool, int, float, float, float | none | Qwen3-TTS |
 | `code_predictor_do_sample`, `code_predictor_top_k`, `code_predictor_top_p`, `code_predictor_temperature` | bool, int, float, float | none | Qwen3-TTS |
 | `instructions` | string | `""` | Qwen3-TTS 1.7B, Irodori-TTS |
@@ -341,5 +346,6 @@ loaded on Metal, with two of its nine voices and four of its options shown:
 - An option has `type` (`string`, `int`, `float`, `bool`), `required`, `steers`, and where they apply `default`,
   `minimum` or `exclusive_minimum`, `maximum`, and `choices`.
 - `device` and `threads` are there for a loaded model alone. `threads` is the number of CPU threads in effect for a model
-  on the CPU, and 0 for a model on a GPU. Setting threads is never an error, since with the device `auto` a caller cannot
-  know where the model will run.
+  on the CPU or for a model on a GPU that can compute part of a request on the CPU (FastConformer's decoding with
+  `decode_on_cpu`), and 0 for a model on a GPU that computes nothing there. Setting threads is never an error, since
+  with the device `auto` a caller cannot know where the model will run.

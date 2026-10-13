@@ -177,6 +177,7 @@ void answer_speech(std::shared_ptr<Served> served, const httplib::Request & req,
         send_error(res, e);
         return;
     }
+    asked.options = served->with_defaults(asked.options);
     auto job = std::make_shared<SpeechJob>();
     job->sample_rate = sample_rate;
     if (asked.max_seconds) {

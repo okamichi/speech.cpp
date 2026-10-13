@@ -13,6 +13,10 @@
 </p>
 
 <p align="center">
+  English · <a href="README.ja.md">日本語</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/nyosegawa/speech.cpp/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/nyosegawa/speech.cpp/build.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
   <a href="https://github.com/nyosegawa/speech.cpp/releases/latest"><img src="https://img.shields.io/github/v/release/nyosegawa/speech.cpp?style=flat-square" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon%20%C2%B7%20Metal-lightgrey?style=flat-square" alt="macOS on Apple Silicon, with Metal">
@@ -195,14 +199,16 @@ factor, and the CER of the speech as Qwen3-ASR 1.7B hears it.
 
 Recognition: the 4,483 utterances of Common Voice 8.0's Japanese test set, trimmed to the voice, with the CER that
 accepts other spellings of the same words in parentheses, and parakeet-tdt-0.6b-v3 on 300 English utterances of FLEURS.
+FastConformer's times were measured on 2026-10-12 by speech-bench, one request at a time, on the first 100 Japanese
+utterances (99 kept by VAD) and the 300 English ones (299 kept); its accuracy and timing use separate sample counts.
 
 | Model | CER on Common Voice ja | Median time, M5 / RTX 2080 |
 |---|---|---|
-| `parakeet-tdt_ctc-0.6b-ja`, F16 | 7.9% (3.0%) | 0.06 s / 0.07 s |
-| `reazonspeech-v2`, F16 | 12.0% (7.1%) | 0.11 s / 0.16 s |
+| `parakeet-tdt_ctc-0.6b-ja`, Q8_0 | 7.9% (3.0%) | 0.05 s / 0.04 s |
+| `reazonspeech-v2`, Q8_0 | 12.1% (7.2%) | 0.08 s / 0.11 s |
 | `qwen3-asr-0.6b`, Q8_0 | 11.9% (7.0%) | 0.13 s / 0.09 s |
 | `qwen3-asr-1.7b`, Q8_0 | 9.5% (4.7%) | 0.31 s / 0.16 s |
-| `parakeet-tdt-0.6b-v3`, F16 | WER 8.8% on FLEURS en | 0.10 s / 0.15 s |
+| `parakeet-tdt-0.6b-v3`, F16 | WER 8.8% on FLEURS en | 0.09 s / 0.10 s |
 
 Each model's page has more.
 

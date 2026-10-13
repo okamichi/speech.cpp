@@ -109,8 +109,9 @@ int main(int argc, char ** argv) {
     };
     ggml_tensor * head = model.tensor("talker.codec_head");
     const int64_t max_positions = model.u32("qwen3-tts.talker.max_position_embeddings");
-    Qwen3Decoder whole(model, backend, "talker", shape, max_positions, GGML_TYPE_F16, prefill, attention);
-    Qwen3Decoder blocks(model, backend, "talker", shape, max_positions, GGML_TYPE_F16, block_rows, attention);
+    Qwen3Decoder whole(model, backend, "talker", shape, max_positions, GGML_TYPE_F16, Qwen3Readback::LogitsAndHidden, prefill, attention);
+    Qwen3Decoder blocks(model, backend, "talker", shape, max_positions, GGML_TYPE_F16, Qwen3Readback::LogitsAndHidden, block_rows,
+                        attention);
     std::printf("backend: %s, %s\n", ggml_backend_name(backend), qwen3_attention_name(blocks.attention()));
 
     double seconds[2];

@@ -4,8 +4,6 @@
 #include <cmath>
 #include <string>
 
-#include "layers.h"
-
 namespace irodori {
 
 /*
@@ -16,7 +14,7 @@ namespace irodori {
  * position.
  */
 
-Dit::Dit(const ModelFile & m) : m_(m) {
+Dit::Dit(const ModelFile & m, ggml_backend_t backend, std::optional<Attention> attention) : m_(m) {
     meanflow_ = m.one_of("irodori-tts.flow", {"meanflow", "rf_velocity"}) == "meanflow";
     dim_ = (int) m.u32("irodori-tts.dit.dim");
     heads_ = (int) m.u32("irodori-tts.dit.num_heads");
@@ -25,6 +23,7 @@ Dit::Dit(const ModelFile & m) : m_(m) {
     latent_dim_ = (int) m.u32("irodori-tts.latent_dim");
     eps_ = m.f32("irodori-tts.norm_eps");
     theta_ = m.f32("irodori-tts.rope_theta");
+    attention_ = choose_attention(backend, dim_ / heads_, attention, "the DiT");
 }
 
 std::vector<float> timestep_embedding(float t, int dim) {
@@ -44,7 +43,7 @@ ggml_tensor * Dit::build(Graph & g, const std::vector<float> & x_in, int frames,
                          const std::vector<Branch> & branch_list, const SpeakerScale & scale, std::vector<ggml_tensor *> * blocks,
                          ggml_tensor ** cond_out) const {
     ggml_context * ctx = g.ctx();
-    const Layers l{ctx, m_, eps_};
+    const Layers l{ctx, m_, eps_, attention_};
     const int head_dim = dim_ / heads_, half = heads_ / 2;
     const int64_t s = frames, n_kv = frames + c.text_tokens + c.speaker_tokens + c.caption_tokens, branches = (int64_t) branch_list.size();
     bool noise = false, masked = false;
@@ -90,7 +89,7 @@ ggml_tensor * Dit::build(Graph & g, const std::vector<float> & x_in, int frames,
             if (branch_list[b].speaker == Branch::Speaker::Left) leave_out(speaker_from, caption_from);
             if (!branch_list[b].caption) leave_out(caption_from, n_kv);
         }
-        mask = g.input(m, n_kv, s, 1, branches);
+        mask = g.half_input(m, n_kv, s, 1, branches);
     }
 
     // Both AdaLN layers of a block split the same condition into shift, scale and gate, each through its own weights.

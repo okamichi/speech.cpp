@@ -40,6 +40,8 @@ std::vector<TensorSpec> tensors(const ModelFile & m) {
     const int n_fft = m.size(p + "frontend.n_fft"), mels = m.size(p + "frontend.n_mels");
     m.size(p + "frontend.hop_length");
     for (const char * key : {"preemphasis", "log_guard", "std_guard"}) m.f32(p + "frontend." + key);
+    // The frontend's real FFT packs the frame's values in pairs.
+    require(n_fft % 2 == 0, m, "fastconformer.frontend.n_fft is odd");
     const int d = m.size(p + "encoder.d_model"), heads = m.size(p + "encoder.num_heads"), kernel = m.size(p + "encoder.conv_kernel");
     // The relative positions are encoded as a sine and a cosine for each pair of channels.
     require(d % 2 == 0 && d % heads == 0, m, "fastconformer.encoder.d_model is odd or not a multiple of fastconformer.encoder.num_heads");

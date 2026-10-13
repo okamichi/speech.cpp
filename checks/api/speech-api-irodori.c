@@ -11,6 +11,14 @@
 
 #include "speech-api-check.h"
 
+/** Whether the file lists the voice none, which a layout 2 file has and a layout 1 file lacks. */
+static int has_voice_none(const speech_model_info * info) {
+    for (size_t i = 0; i < speech_model_info_voice_count(info); i++) {
+        if (!strcmp(speech_model_info_voice_name(info, i), "none")) return 1;
+    }
+    return 0;
+}
+
 /** Irodori-TTS: the length's rules, the steps, the progress of the sampler, and a text past the longest. */
 static int check_irodori_tts(speech_model * model, const speech_model_info * info, const char * voice) {
     const int rate = speech_model_info_sample_rate(info);
@@ -35,9 +43,16 @@ static int check_irodori_tts(speech_model * model, const speech_model_info * inf
     r = new_request(model, SENTENCE, voice, 5);
     speech_request_set_float(r, SPEECH_OPT_DURATION_SCALE, 50);
     ok &= expect(speak(r, &audio, NULL, NULL), SPEECH_ERROR_OUT_OF_RANGE, "duration_scale", "a predicted length scaled by 50");
-    r = new_request(model, "はい。", voice, 5);
-    speech_request_set_float(r, SPEECH_OPT_SPEED, 4);
-    ok &= expect(speak(r, &audio, NULL, NULL), SPEECH_ERROR_OUT_OF_RANGE, "speed", "a short predicted length at a speed of 4");
+    // A speed of 4 takes a prediction under 2 s below the shortest length of 0.5 s, and only the voice none fixes the
+    // prediction: in it both v4.1 models predict 0.94 s for はい。, where a voice made of calm, slow speech
+    // (voice-calm-adult-man.wav) predicts 3.28 s, in speech.cpp and in the official runtime alike (2026-10-11).
+    if (has_voice_none(info)) {
+        r = new_request(model, "はい。", "none", 5);
+        speech_request_set_float(r, SPEECH_OPT_SPEED, 4);
+        ok &= expect(speak(r, &audio, NULL, NULL), SPEECH_ERROR_OUT_OF_RANGE, "speed", "a short predicted length at a speed of 4");
+    } else {
+        printf("a short predicted length at a speed of 4 is checked in the voice none, which this file does not have\n");
+    }
 
     Progress progress;
     memset(&progress, 0, sizeof progress);
@@ -228,10 +243,8 @@ static int check_irodori_options(speech_model * model, const speech_model_info *
  * has no speaker to act on; a file without it refuses none naming the null speaker it lacks.
  */
 static int check_irodori_without_reference(speech_model * model, const speech_model_info * info) {
-    int has_none = 0;
-    for (size_t i = 0; i < speech_model_info_voice_count(info); i++) has_none |= !strcmp(speech_model_info_voice_name(info, i), "none");
     int ok = 1;
-    if (!has_none) {
+    if (!has_voice_none(info)) {
         speech_request * r = new_request(model, "はい。", NULL, 3);
         ok &= expect(speech_request_set_string(r, SPEECH_OPT_VOICE, "none"), SPEECH_ERROR_OUT_OF_RANGE, "voice", "the voice none without the null speaker") &&
               strstr(speech_last_error(), "null speaker") != NULL;
@@ -423,9 +436,7 @@ int check_voice_params(const char * model_path, const char * reference, const ch
  * into the longest; a speed that brings it within is followed; and a shorter text is spoken at its predicted length.
  */
 static int check_irodori_longest(speech_model * model, const speech_model_info * info) {
-    int has_none = 0;
-    for (size_t i = 0; i < speech_model_info_voice_count(info); i++) has_none |= !strcmp(speech_model_info_voice_name(info, i), "none");
-    if (!has_none) {
+    if (!has_voice_none(info)) {
         printf("the longest speech is checked in the voice none, which this file does not have\n");
         return 0;
     }

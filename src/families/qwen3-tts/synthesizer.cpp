@@ -77,13 +77,20 @@ SynthesisOutcome Synthesizer::synthesize(const SynthesisRequest & r, const Audio
     // The code predictor's generate() starts each frame from embeddings alone, so the codes its repetition penalty sees
     // are the frame's that it has made so far.
     std::vector<int32_t> cp_history;
-    const auto sample_code = [&](const std::vector<float> & logits) {
+    // A frame's draws for codes 1 to 15 are taken from the seed after its first code's and in the order of the codes, as
+    // picking the codes one by one would take them, so that a seed speaks the same in one graph and a step at a time.
+    std::vector<double> cp_draws;
+    const auto in_code_predictor = [](const auto & pick) {
         try {
-            return sample(logits, cp_sampling, cp_history, none, rng);
+            return pick();
         } catch (const Error & e) {
             // The sampler names the talker's options; the code predictor's carry its name before them.
+            if (e.input().empty()) throw;
             throw Error(e.fault(), std::string("in the code predictor, ") + e.what(), "code_predictor_" + e.input());
         }
+    };
+    const auto sample_code = [&](const std::vector<float> & logits, int code) {
+        return in_code_predictor([&] { return sample(logits, cp_sampling, cp_history, none, cp_sampling.greedy ? 0.0 : cp_draws[code - 1]); });
     };
 
     {
@@ -119,11 +126,17 @@ SynthesisOutcome Synthesizer::synthesize(const SynthesisRequest & r, const Audio
         history.push_back(frame[0]);
         {
             Timer t{&st.code_predictor};
-            cp_history.clear();
-            frame[1] = sample_code(talker_.cp_begin(frame[0]));
-            for (int g = 1; g < n_groups - 1; g++) {
-                cp_history.push_back(frame[g]);
-                frame[g + 1] = sample_code(talker_.cp_next(g, frame[g]));
+            cp_draws.clear();
+            if (!cp_sampling.greedy) {
+                for (int g = 1; g < n_groups; g++) cp_draws.push_back(uniform(rng));
+            }
+            if (!in_code_predictor([&] { return talker_.cp_frame(frame[0], cp_sampling, cp_draws, &frame[1]); })) {
+                cp_history.clear();
+                frame[1] = sample_code(talker_.cp_begin(frame[0]), 1);
+                for (int g = 1; g < n_groups - 1; g++) {
+                    cp_history.push_back(frame[g]);
+                    frame[g + 1] = sample_code(talker_.cp_next(g, frame[g]), g + 1);
+                }
             }
         }
         pending.insert(pending.end(), frame.begin(), frame.end());

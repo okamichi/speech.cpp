@@ -13,12 +13,13 @@ lasts. Measured through the worker on speech-bench's 20 Japanese sentences on 20
   instead of 1 and 4 changed 98% of its samples, by up to 1.7e-4 on Metal and 7.0e-4 on the CPU with the F16 weights of
   the codec. A call of the codec took about 16 ms on the M5's Metal whether it decoded 1 frame or 4 (a rough measure on
   a shared GPU).
-- Irodori-TTS makes a sentence's whole latent, then its codec decodes it in windows and passes each on, each window
-  with 10 frames on either side decoded and dropped: 12 frames decode 32, 24 decode 44, 48 decode 68. With 12 frames
-  (0.48 s) first and then 48 at a time, the second window came 0.288 s after the first on the M5, with 0.19 s of the
-  first window's audio left to play, and 0.32 s after it on the RTX 2080; a machine about half as fast as the M5 would
-  run dry between them in every sentence. The decoder is convolutions without a cache, and the margin of 10 frames
-  covers its receptive field of 7.7, so decoding in windows of any sizes gives the samples of one decode, bit for bit.
+- Irodori-TTS makes a sentence's whole latent, then its codec decodes it in windows and passes each on. With 12 frames
+  (0.48 s) first and then 48 at a time, each window with 10 frames on either side decoded and dropped, the second
+  window came 0.288 s after the first on the M5, with 0.19 s of the first window's audio left to play, and 0.32 s after
+  it on the RTX 2080; a machine about half as fast as the M5 would run dry between them in every sentence. The decoder
+  is convolutions without a cache whose receptive field reaches 8 frames on either side of a frame, so a window that
+  decodes 8 frames on either side of its own and drops them gives the samples of one decode, bit for bit, whatever the
+  sizes of the windows: 12 frames decode 28, 24 decode 40, 48 decode 64.
 
 ## Decision
 
@@ -47,10 +48,17 @@ The alternatives were turned down:
   position. It rewrites the codec's state for a difference far below what anyone hears.
 - A first chunk of 2 frames. The first audio would come a frame later.
 - Chunks of 1 frame throughout. Each would pay the codec's 16 ms.
-- A fixed later Irodori-TTS window smaller than 48, such as 24 everywhere. Fast machines would decode 29% more per
+- A fixed later Irodori-TTS window smaller than 48, such as 24 everywhere. Fast machines would decode 25% more per
   second of audio for nothing and break the stream into twice the chunks.
-- A floor of 12 for Irodori-TTS's later windows. It decodes 88% more per second of audio than 48, which a machine that
+- A floor of 12 for Irodori-TTS's later windows. It decodes 75% more per second of audio than 48, which a machine that
   decodes 48-frame windows barely faster than real time cannot afford.
+- Later Irodori-TTS windows past 48 frames, up to 96, whenever their expected decoding fits the second window's wait.
+  v4.1-Small-MF F16 spoke speech-bench's 20 sentences 7.0% faster on an Apple M5 (2026-10-13), but only by spending the
+  listener's slack: its second window arrived with 0.05 to 0.1 s of audio left to play instead of 0.16 to 0.19 s, and a
+  window seen taking 1.64 times its estimate on a shared GPU would have run the stream dry. Growing a window only once
+  the listener holds the audio of the frames it decodes kept that slack but gained 1.4%, within the noise, since only
+  sentences longer than about 6.2 s reach a third window, and each frame a window decodes adds about 3.5 MiB to the
+  codec's buffers on the device (226 MiB at 48 frames, 394 MiB at 96).
 
 ## Consequences
 

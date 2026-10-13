@@ -60,6 +60,8 @@ public:
      * loaded, throws an ApiError, and an option the model refuses the library's Failure.
      */
     virtual std::unique_ptr<utterances::Detection> detect(const std::vector<RequestOption> & options) = 0;
+    /** The defaults the detection model held was given on the command line, which turn detection takes before OpenAI's. */
+    virtual std::vector<RequestOption> detection_defaults() = 0;
     /** Whether `detection` runs on the detection model held now, which it no longer does once the host lets that go. */
     virtual bool holds(const utterances::Detection & detection) = 0;
 };

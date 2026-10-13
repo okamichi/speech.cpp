@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
+
+#include "error.h"
 
 namespace fastconformer {
 
@@ -11,8 +14,36 @@ namespace fastconformer {
  * layout of ggml's 2D convolutions, whose width is the mel axis and height the time axis.
  */
 
-Encoder::Encoder(const ModelFile & m)
-    : m_(m),
+struct Encoder::Positions {
+    std::unique_ptr<ggml_context, decltype(&ggml_free)> context{nullptr, ggml_free};
+    std::unique_ptr<ggml_backend_buffer, decltype(&ggml_backend_buffer_free)> buffer{nullptr, ggml_backend_buffer_free};
+    std::map<std::string, ggml_tensor *> projected;
+
+    Positions(const ModelFile & model, ggml_backend_t backend, const std::vector<float> & positions, int width, int layers) {
+        context.reset(ggml_init({ggml_tensor_overhead() * (size_t) layers, nullptr, true}));
+        if (!context) throw Error(Fault::OutOfMemory, "cannot create a position context");
+        const int64_t count = (int64_t) positions.size() / width;
+        for (int l = 0; l < layers; l++) {
+            projected.emplace("blk." + std::to_string(l) + ".attn", ggml_new_tensor_2d(context.get(), GGML_TYPE_F32, width, count));
+        }
+        buffer.reset(ggml_backend_alloc_ctx_tensors(context.get(), backend));
+        if (!buffer) throw Error(Fault::OutOfMemory, "cannot allocate attention positions");
+        std::unique_ptr<ggml_gallocr, decltype(&ggml_gallocr_free)> allocator(
+            ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend)), ggml_gallocr_free);
+        if (!allocator) throw Error(Fault::OutOfMemory, "cannot create a position allocator");
+        Graph graph;
+        auto * input = graph.input(positions, width, count);
+        for (const auto & entry : projected) {
+            graph.copy(mul_mat(graph.ctx(), model.tensor(entry.first + "_pos.weight"), input), entry.second);
+        }
+        graph.compute(backend, allocator.get());
+    }
+};
+
+Encoder::~Encoder() = default;
+
+Encoder::Encoder(const ModelFile & m, ggml_backend_t backend)
+    : backend_(backend), m_(m),
       mels_((int) m.u32("fastconformer.frontend.n_mels")),
       d_model_((int) m.u32("fastconformer.encoder.d_model")),
       layers_((int) m.u32("fastconformer.encoder.num_layers")),
@@ -28,6 +59,10 @@ Encoder::Encoder(const ModelFile & m)
         context_ = (int) m.u32("fastconformer.encoder.attention_context");
         global_tokens_ = (int) m.u32("fastconformer.encoder.global_tokens");
     }
+    // Global attention can reuse the same central positions across input lengths. Bound the retained projections
+    // to 32 MiB; longer inputs compute their positions in the utterance graph. Local attention has a fixed span.
+    const int64_t rows = 32 * 1024 * 1024 / ((int64_t) layers_ * d_model_ * (int64_t) sizeof(float));
+    cached_span_ = local_ ? context_ : rows > 0 ? (rows - 1) / 2 : -1;
     sub_layers_ = 0;
     for (uint32_t f = m.u32("fastconformer.encoder.subsampling_factor"); f > 1; f /= 2) sub_layers_++;
 }
@@ -83,23 +118,29 @@ Encoder::AttentionInputs Encoder::attention_inputs(Graph & g, int64_t t) const {
     // -(T - 1), and LocalAttRelPositionalEncoding.extend_pe() those from the context down to minus the context; both
     // through create_pe(): sines in the even channels and cosines in the odd, computed in float32, so the angles
     // round as they do here.
-    const int64_t span = local_ ? context_ : t - 1;
-    std::vector<float> pe((size_t) ((2 * span + 1) * d_model_));
-    const float step = (float) (-std::log((double) pos_base_) / d_model_);
-    for (int64_t c = 0; c < 2 * span + 1; c++) {
-        const float position = (float) (span - c);
-        for (int i = 0; i < d_model_; i += 2) {
-            const float angle = position * std::exp((float) i * step);
-            pe[(size_t) (c * d_model_ + i)] = std::sin(angle);
-            pe[(size_t) (c * d_model_ + i + 1)] = std::cos(angle);
+    const int64_t needed = local_ ? context_ : t - 1;
+    const bool cached = needed <= cached_span_;
+    const int64_t span = cached ? cached_span_ : needed;
+    std::vector<float> pe;
+    if (!cached || !positions_) {
+        pe.resize((size_t) ((2 * span + 1) * d_model_));
+        const float step = (float) (-std::log((double) pos_base_) / d_model_);
+        for (int64_t c = 0; c < 2 * span + 1; c++) {
+            const float position = (float) (span - c);
+            for (int i = 0; i < d_model_; i += 2) {
+                const float angle = position * std::exp((float) i * step);
+                pe[(size_t) (c * d_model_ + i)] = std::sin(angle);
+                pe[(size_t) (c * d_model_ + i + 1)] = std::cos(angle);
+            }
         }
+        if (cached && !positions_) positions_ = std::make_unique<Positions>(m_, backend_, pe, d_model_, layers_);
     }
-    AttentionInputs in{g.input(pe, d_model_, 2 * span + 1), nullptr};
+    AttentionInputs in{cached ? nullptr : g.input(pe, d_model_, 2 * span + 1), nullptr};
     if (local_) {
         // The scores of block k's query r are [global tokens, window], where window column c is the frame
         // (k - 1) w + c; a frame is seen when it is within w of the query and in the utterance. NeMo masks the frames
         // before the utterance with -inf and its padding after it with -10000, which both leave a weight of 0.
-        const int64_t w = context_, blocks = (t + w - 1) / w, globals = std::min<int64_t>(global_tokens_, t);
+        const int64_t w = std::min<int64_t>(context_, t), blocks = (t + w - 1) / w, globals = std::min<int64_t>(global_tokens_, t);
         const int64_t row = globals + 3 * w;
         std::vector<float> mask((size_t) (row * w * blocks), -std::numeric_limits<float>::infinity());
         for (int64_t k = 0; k < blocks; k++) {
@@ -137,9 +178,16 @@ ggml_tensor * Encoder::attention(Graph & g, ggml_tensor * x, const AttentionInpu
     if (local_) return ggml_add(ctx, x, linear(ctx, local_attention(g, q, k, v, in, name), name + "_out", use_bias_));
 
     auto heads = [&](ggml_tensor * y, int64_t n) {
-        return ggml_cont(ctx, ggml_permute(ctx, ggml_reshape_3d(ctx, y, dk, heads_, n), 0, 2, 1, 3));
+        return ggml_permute(ctx, ggml_reshape_3d(ctx, y, dk, heads_, n), 0, 2, 1, 3);
     };
-    ggml_tensor * p = heads(mul_mat(ctx, m_.tensor(name + "_pos.weight"), in.pos), 2 * t - 1);
+    ggml_tensor * projected;
+    if (in.pos) projected = mul_mat(ctx, m_.tensor(name + "_pos.weight"), in.pos);
+    else {
+        projected = positions_->projected.at(name);
+        projected = ggml_view_2d(ctx, projected, d_model_, 2 * t - 1, projected->nb[1],
+                                 (size_t) (cached_span_ - (t - 1)) * projected->nb[1]);
+    }
+    ggml_tensor * p = heads(projected, 2 * t - 1);
     ggml_tensor * qu = heads(ggml_add(ctx, q, m_.tensor(name + "_pos_bias_u")), t);
     ggml_tensor * qv = heads(ggml_add(ctx, q, m_.tensor(name + "_pos_bias_v")), t);
 
@@ -175,7 +223,7 @@ ggml_tensor * Encoder::attention(Graph & g, ggml_tensor * x, const AttentionInpu
 ggml_tensor * Encoder::local_attention(Graph & g, ggml_tensor * q, ggml_tensor * k, ggml_tensor * v, const AttentionInputs & in,
                                        const std::string & name) const {
     ggml_context * ctx = g.ctx();
-    const int64_t t = q->ne[2], dk = d_model_ / heads_, w = context_, blocks = (t + w - 1) / w, padded = blocks * w;
+    const int64_t t = q->ne[2], dk = d_model_ / heads_, w = std::min<int64_t>(context_, t), blocks = (t + w - 1) / w, padded = blocks * w;
     const int64_t window = 3 * w, globals = std::min<int64_t>(global_tokens_, t);
     // [d_k, heads, T] to [d_k, T, heads].
     auto heads = [&](ggml_tensor * y) { return ggml_cont(ctx, ggml_permute(ctx, y, 0, 2, 1, 3)); };
@@ -196,7 +244,11 @@ ggml_tensor * Encoder::local_attention(Graph & g, ggml_tensor * q, ggml_tensor *
     ggml_tensor * kw = ggml_concat(ctx, ggml_concat(ctx, key_blocks(0), key_blocks(1), 1), key_blocks(2), 1);
     ggml_tensor * ac = mul_mat(ctx, kw, qu);
 
-    ggml_tensor * p = heads(ggml_reshape_3d(ctx, mul_mat(ctx, m_.tensor(name + "_pos.weight"), in.pos), dk, heads_, 2 * w + 1));
+    // When the utterance fits inside the context, a block of its length sees the same valid keys without padding
+    // to the full context. The fixed positional projection is sliced around its zero position.
+    ggml_tensor * positions = positions_->projected.at(name);
+    positions = ggml_view_2d(ctx, positions, d_model_, 2 * w + 1, positions->nb[1], (size_t) (context_ - w) * positions->nb[1]);
+    ggml_tensor * p = heads(ggml_reshape_3d(ctx, positions, dk, heads_, 2 * w + 1));
     ggml_tensor * bd = ggml_pad(ctx, mul_mat(ctx, p, qv), (int) (window - (2 * w + 1)), 0, 0, 0);
     bd = ggml_view_4d(ctx, bd, window, w, blocks, heads_, (size_t) (window - 1) * sizeof(float), (size_t) (w * window) * sizeof(float),
                       bd->nb[2], 0);

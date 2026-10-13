@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #include "error.h"
+#include "decoder-step.h"
 
 namespace fastconformer {
 
@@ -34,7 +35,8 @@ Decoding TdtDecoder::decode(const std::vector<float> & projected, ggml_backend_t
     };
     // The step's graph and the joint's alone keep an allocator each, so that neither is planned again when the
     // other runs.
-    const Allocator step_allocator = new_allocator(backend), joint_allocator = new_allocator(backend);
+    DecoderStep step(prediction_, joint_, backend, 1);
+    const Allocator joint_allocator = new_allocator(backend);
 
     Decoding d;
     PredictionState state = prediction_.initial_state();
@@ -45,19 +47,12 @@ Decoding TdtDecoder::decode(const std::vector<float> & projected, ggml_backend_t
         if (progress && !progress((double) t / (double) frames)) break;
         // The prediction network takes the last label, and the joint is evaluated at the current frame with its
         // output, in one graph.
-        Graph g(512);
-        const PredictionNetwork::Step step = prediction_.build(g, label, state);
-        ggml_tensor * predicted = joint_.project_prediction(g.ctx(), step.output);
-        ggml_tensor * logits = joint_.build(g.ctx(), g.input(frame(t), hidden), predicted);
-        g.output(logits);
-        g.output(predicted);
-        g.output(step.h);
-        g.output(step.c);
-        g.compute(backend, step_allocator.get());
+        step.compute(label, state, frame(t));
         d.graphs++;
-        state = PredictionNetwork::read_state(step);
-        const std::vector<float> prediction = Graph::read(predicted);
-        std::vector<float> out = Graph::read(logits);
+        state = step.state();
+        const std::vector<float> prediction = step.prediction();
+        std::vector<float> out;
+        step.logits(out);
 
         int64_t label_frame;
         int32_t duration;

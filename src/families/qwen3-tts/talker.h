@@ -1,12 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
 #include "model-file.h"
 #include "qwen3-decoder.h"
+#include "sampler.h"
 
 /**
  * The talker and its code predictor, two Qwen3 decoder stacks. The talker reads one embedding per frame and predicts
@@ -46,13 +48,30 @@ public:
     /** The talker's last hidden state after the final norm, which conditions the code predictor. */
     const std::vector<float> & hidden_state() const { return talker_.hidden(); }
 
+    /**
+     * Code predictor: the codes 1 to 15 of a frame whose first code is `code0`, into `codes`, each picked under `p` as
+     * sample() picks with the numbers `draws`, one a code from uniform() where `p` draws and none where it is greedy, in
+     * one graph on the device that starts from the talker's last hidden state. The graph is kept for the next frame while
+     * `p` stays. Returns false, having picked nothing, where a graph does not follow `p` (GraphSampler::follows()) or the
+     * device cannot compute it; cp_begin() and cp_next() then make the frame a step at a time.
+     */
+    bool cp_frame(int32_t code0, const SamplingParams & p, const std::vector<double> & draws, int32_t * codes);
+    /** The logits of code `group + 1`, `group` 0 to 14, in the last frame cp_frame() made. */
+    std::vector<float> cp_frame_logits(int group) const { return cp_.chain_logits(group); }
+    /** The bytes the device holds for the code predictor's graphs. */
+    size_t cp_graph_bytes() const { return cp_.graph_bytes(); }
+
     /** Code predictor: starts a frame from the talker's hidden state and the first code, and returns the logits of code 1. */
     const std::vector<float> & cp_begin(int32_t code0);
     /** Feeds code `group` (1..14) and returns the logits of code `group + 1`. */
     const std::vector<float> & cp_next(int group, int32_t code);
 
 private:
+    class Frame;
+
     const std::vector<float> & run_cp(int32_t code, int group);
+    /** The code predictor's input rows from rows in the talker's hidden space, [talker hidden, n]. */
+    ggml_tensor * cp_input(ggml_context * ctx, ggml_tensor * x) const;
 
     ggml_backend_t backend_;
     const ModelFile & m_;
@@ -63,4 +82,5 @@ private:
     bool cp_projected_ = false;
     /** The allocator of the embedding graphs; each decoder has its own. */
     ggml_gallocr_t allocr_ = nullptr;
+    std::unique_ptr<Frame> frame_;
 };

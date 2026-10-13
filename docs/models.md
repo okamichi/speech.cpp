@@ -16,8 +16,8 @@ first time.
 | [`irodori-tts`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-GGUF) | synthesis | ja | `Irodori-TTS-859M-v4.1-F16.gguf`, 1.91 GB | [Irodori-TTS](models/irodori-tts.md) |
 | [`qwen3-asr-0.6b`](https://huggingface.co/sakasegawa/Qwen3-ASR-0.6B-GGUF) | recognition | 30 languages | `Qwen3-ASR-0.6B-Q8_0.gguf`, 0.84 GB | [Qwen3-ASR](models/qwen3-asr.md) |
 | [`qwen3-asr-1.7b`](https://huggingface.co/sakasegawa/Qwen3-ASR-1.7B-GGUF) | recognition | 30 languages | `Qwen3-ASR-1.7B-Q8_0.gguf`, 2.18 GB | [Qwen3-ASR](models/qwen3-asr.md) |
-| [`reazonspeech-v2`](https://huggingface.co/sakasegawa/reazonspeech-nemo-v2-GGUF) | recognition | ja | `reazonspeech-nemo-619M-v2-F16.gguf`, 1.24 GB | [FastConformer](models/fastconformer.md) |
-| [`parakeet-tdt_ctc-0.6b-ja`](https://huggingface.co/sakasegawa/parakeet-tdt_ctc-0.6b-ja-GGUF) | recognition | ja | `parakeet-tdt_ctc-0.6B-ja-F16.gguf`, 1.24 GB | [FastConformer](models/fastconformer.md) |
+| [`reazonspeech-v2`](https://huggingface.co/sakasegawa/reazonspeech-nemo-v2-GGUF) | recognition | ja | `reazonspeech-nemo-619M-v2-Q8_0.gguf`, 0.66 GB | [FastConformer](models/fastconformer.md) |
+| [`parakeet-tdt_ctc-0.6b-ja`](https://huggingface.co/sakasegawa/parakeet-tdt_ctc-0.6b-ja-GGUF) | recognition | ja | `parakeet-tdt_ctc-0.6B-ja-Q8_0.gguf`, 0.66 GB | [FastConformer](models/fastconformer.md) |
 | [`parakeet-tdt-0.6b-v3`](https://huggingface.co/sakasegawa/parakeet-tdt-0.6b-v3-GGUF) | recognition | 25 European languages | `parakeet-tdt-0.6B-v3-F16.gguf`, 1.26 GB | [FastConformer](models/fastconformer.md) |
 | [`silero-vad`](https://huggingface.co/sakasegawa/silero-vad-GGUF) | detection | any | `silero-vad-309K-v6.2-F32.gguf`, 1.2 MB | [Silero VAD](models/silero-vad.md) |
 
@@ -43,15 +43,19 @@ Every subcommand that takes a model (`tts`, `asr`, `vad`, `voice`, `info`, `serv
 which ends in `.gguf`, or `NAME[:TYPE]`:
 
 - NAME is a name of the catalog, or the Hugging Face repository of its converted files.
-- TYPE is the file's weight type, `q8_0`, `f16` or `f32`, where the repository holds it. Without it, the name means the
-  file in the table above.
+- TYPE is the file's weight type, `f16`, `q8_0`, `q6_k`, `q5_k` or `q4_k`, where the repository holds it. Without it,
+  the name means the file in the table above.
 
 ```sh
 speech asr qwen3-asr-0.6b meeting.wav                       # Qwen3-ASR-0.6B-Q8_0.gguf
 speech asr sakasegawa/Qwen3-ASR-0.6B-GGUF meeting.wav       # the same file, named by its repository
 speech asr qwen3-asr-0.6b:q8_0 meeting.wav                  # the same file, its type given
+speech asr qwen3-asr-0.6b:q4_k meeting.wav                  # Qwen3-ASR-0.6B-Q4_K.gguf, 0.51 GB
 speech serve reazonspeech-v2                                # fetched before the server starts
 ```
+
+Every model but Silero VAD also comes in Q6_K, Q5_K and Q4_K, which take less memory and are less accurate. Each
+family's page gives the size, the memory and the accuracy of every type, and `speech models` lists the files.
 
 A name or a type that the catalog does not hold is refused, and the message lists what it holds. A release fetches the
 files it was checked with, so a file updated on Hugging Face reaches you with the next release.

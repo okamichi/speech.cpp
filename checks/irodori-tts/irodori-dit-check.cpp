@@ -2,9 +2,10 @@
 // reference/irodori-tts/dump.py made with the same model (MF or RF), each with the guidance and schedule of its
 // request: the schedule, the timestep condition and every block of the first step, the speaker noise of a request
 // that asks for it, then every step's velocity (after the guidance and the rescaling for RF) from the dump's own
-// latent before it, then the whole sampler from the dump's noise.
+// latent before it, then the whole sampler from the dump's noise. The DiT attends as it chooses on the device, or as the
+// last argument forces it, so that both attentions are checked on a GPU.
 //
-// usage: irodori-dit-check <model.gguf> <reference out dir> [gpu|cpu|device name]
+// usage: irodori-dit-check <model.gguf> <reference out dir> [gpu|cpu|device name] [flash|products]
 
 #include <algorithm>
 #include <chrono>
@@ -26,14 +27,15 @@ using namespace irodori;
 int main(int argc, char ** argv) {
     const std::vector<std::string> args = utf8_args(argc, argv);
     if (args.size() < 3) {
-        std::fprintf(stderr, "usage: %s <model.gguf> <reference out dir> [gpu|cpu|device name]\n", args[0].c_str());
+        std::fprintf(stderr, "usage: %s <model.gguf> <reference out dir> [gpu|cpu|device name] [flash|products]\n", args[0].c_str());
         return 2;
     }
     try {
         ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
         std::printf("backend: %s\n", ggml_backend_name(backend));
         const ModelFile model(args[1], backend, model_layout);
-        const Dit dit(model);
+        const Dit dit(model, backend, forced_attention(args, 4));
+        std::printf("DiT: %s\n", attention_name(dit.attention()));
         Sampler sampler(dit, model, backend);
         ggml_gallocr_t allocr = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
 
@@ -123,13 +125,14 @@ int main(int argc, char ** argv) {
             const Diff df = compare(final_x.data(), &xs.f32[(steps - 1) * n], n);
             print_diff("  sampled latent", df);
             std::printf("  sampling took %.3f s\n", seconds);
-            // Measured on an Apple M5 for the MF dumps: 86 to 122 dB on the CPU in F32 and 33 to 61 dB on Metal,
+            // Measured on an Apple M5 for the MF dumps: 86 to 122 dB on the CPU in F32 and 37 to 70 dB on Metal,
             // whose matrix kernel rounds its inputs to half precision, which four large steps amplify; 21 to
-            // 41 dB with Q8_0 weights. RF's dumps lie 89 to 123 dB from the official on the CPU and 36 to 67 dB
-            // on Metal (2026-10-07), the least with the strongest guidance (rf-weather-cfg). The speaker's keys
+            // 41 dB with Q8_0 weights. RF's dumps lie 89 to 123 dB from the official on the CPU and 33 to 68 dB
+            // on Metal (2026-10-13), the least with a caption or the strongest guidance. The speaker's keys
             // scaled in every layer make the attention sensitive to the keys' rounding: rf-hai-speaker-kv-min1's
-            // worst step lies 31 dB from the official on Metal, and as far on the CPU with the keys alone rounded
-            // to half precision. A wrong operation gives a few dB.
+            // worst step lies 31 dB from the official on Metal with the two products, whose kernel rounds the keys
+            // to half precision, as far as on the CPU with the keys alone rounded, and 48 to 51 dB with flash attention,
+            // which keeps them in float32. A wrong operation gives a few dB.
             ok = ok && df.snr_db > 15;
             if (!dit.meanflow() && d.sets_guidance()) {
                 // The request's guidance must move the latent further from the default's than the port is from the

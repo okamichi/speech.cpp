@@ -3,7 +3,8 @@
 // their probabilities against the softmax of what the processors leave, and a greedy pick against its argmax. A case
 // samples with its own settings, or with the model file's where it applies the official defaults, which are then
 // compared with the official ones; the talker's tokens that a frame may not take are the model file's. Draws are not
-// compared: torch.multinomial draws with torch's own generator.
+// compared with torch's: torch.multinomial draws with torch's own generator. The draw is checked on its own: a pick at
+// the edges of the cumulative shares, and the shares of many draws.
 //
 // The sampler computes the penalty and the temperature in float as torch does, and the probabilities in double from
 // them, so it parts from the softmax of the processors' scores by the order of a sum alone. It also checks that a
@@ -20,6 +21,7 @@
 #include <iterator>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "args.h"
@@ -85,6 +87,31 @@ bool refuses_overflowing_penalty() {
             ok &= refused;
         }
     }
+    return ok;
+}
+
+/**
+ * pick() at the edges of the cumulative shares of weights 1, 2, 3 and 4, where a draw equal to a share passes to the
+ * next token, and the shares of 400000 draws of uniform() from seed 1, which stay within 0.004 of 0.1, 0.2, 0.3 and
+ * 0.4, about five standard deviations of a fair draw.
+ */
+bool picks_by_cumulative_share() {
+    const std::vector<double> weights = {1, 2, 3, 4};
+    const std::vector<std::pair<double, int>> edges = {{0.0, 0}, {0.0999, 0}, {0.1, 1}, {0.2999, 1}, {0.3000001, 2}, {0.65, 3}, {1.0, 3}};
+    bool ok = pick({5}, 1.0) == 0;
+    for (const auto & e : edges) ok &= pick(weights, e.first) == e.second;
+    std::mt19937_64 rng(1);
+    std::vector<int> counts(weights.size(), 0);
+    constexpr int kDraws = 400000;
+    double worst = 0;
+    for (int i = 0; i < kDraws; i++) {
+        const double u = uniform(rng);
+        ok &= u >= 0 && u <= 1;
+        counts[pick(weights, u)]++;
+    }
+    for (size_t i = 0; i < weights.size(); i++) worst = std::max(worst, std::fabs((double) counts[i] / kDraws - weights[i] / 10));
+    ok &= worst <= 0.004;
+    std::printf("%-36s edges of the cumulative shares, and shares of %d draws within %.4f: %s\n", "draw", kDraws, worst, ok ? "ok" : "FAIL");
     return ok;
 }
 
@@ -175,5 +202,6 @@ int main(int argc, char ** argv) {
         ok &= pass;
     }
     ok &= refuses_overflowing_penalty();
+    ok &= picks_by_cumulative_share();
     return ok ? 0 : 1;
 }

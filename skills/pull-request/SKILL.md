@@ -1,6 +1,6 @@
 ---
 name: pull-request
-description: Take a change to speech.cpp from a branch to main. Covers the worktree and branch, the checks a change runs, commit messages, the pull request, one Codex review, CI, the squash merge and cleaning up, and taking back a subagent's branch. Use when starting a change, committing, pushing, opening, reviewing or merging a pull request, or waiting for CI (PRを出す、レビュー、CIを待つ、マージ、片づけ). Not for tagging a release (release) or for checks on a Windows machine (windows-check).
+description: Take a change to speech.cpp from a branch to main. Covers the worktree and branch, the checks a change runs, commit messages, the pull request, one Codex review, CI, stacked pull requests, the squash merge and its order, cleaning up, and taking back a subagent's branch. Use when starting a change, committing, pushing, opening, reviewing or merging a pull request, stacking one on another, or waiting for CI (PRを出す、レビュー、CIを待つ、マージ、PR を積む、片づけ). Not for tagging a release (release) or for checks on a Windows machine (windows-check).
 ---
 
 # From a branch to main
@@ -31,7 +31,8 @@ may be large: a model's options, a feature with its page and docs, a set of fixe
 
 `git push -u origin <branch>` and `gh pr create --base main --title "<one sentence>" --body-file <file>`. The body says
 what changed and why, any behaviour that changes for existing users, what was checked and on what, and what was not.
-A branch whose Windows or Linux code was not compiled locally can open as a draft first, so that CI compiles it.
+A branch whose Windows or Linux code was not compiled locally can open as a draft first, so that CI compiles it. A pull
+request that moves the ggml submodule pushes the fork's branch first, as the ggml-fork skill says.
 
 ## 4. One review
 
@@ -46,17 +47,36 @@ the pull request.
 - `gh pr checks <n> --watch` until every job ends, started in the background. Right after a push it may report no
   checks yet; wait until they appear (`until gh pr checks <n> | grep -q .; do sleep 10; done`) before watching. A
   failure is read from its log (`gh run view <run> --log-failed`) and fixed on the branch.
-- Merge with a squash once CI passes and the review's findings are fixed, when the maintainer has asked you to merge:
-  `gh pr merge <n> --squash --delete-branch`. Otherwise leave it for the maintainer.
+- A pull request that changes only Markdown files, `docs/` or `skills/` runs no CI (`paths-ignore` in
+  `.github/workflows/build.yml`), so `gh pr checks` never lists a check for it: do not wait for one. It is ready to merge
+  once the review's findings are fixed.
+- Merge with a squash once CI passes, the review's findings are fixed and any Windows check is recorded on the pull
+  request, when the maintainer has said you may merge: `gh pr merge <n> --squash --delete-branch`, the pull requests
+  others depend on first. Otherwise leave it for the maintainer.
 
 ## 6. Clean up
 
 `git worktree remove --force <path>`, `git branch -D <branch>`, and confirm with `git worktree list`. Remove temporary
 branches pushed for CI runs (`git push origin --delete <branch>`).
 
+## Stacked pull requests
+
+- A pull request may build on another's branch when it needs that change: open it with `--base <that branch>` and say
+  in its body which pull request it builds on.
+- Before merging the base, retarget every pull request on it to main (`gh pr edit <n> --base main`): `--delete-branch`
+  deletes the merged branch, and that closes every pull request whose base it is.
+- Note each dependent's own base when it is opened, the commit it was built on:
+  `git merge-base <dependent> <base branch>`, taken before the base branch changes. In a stack A, B, C, C's base is
+  the commit of B it was built on, which is no longer B's tip once B is rebased.
+- After the base merges with a squash, its commits are not on main. `git fetch origin` and check that `origin/main`
+  holds the squash merge (`git log origin/main` lists it); a rebase onto an `origin/main` from before the merge drops
+  the base's changes. Then bring the dependent onto main with `git rebase --onto origin/main <its base>` and push with
+  `--force-with-lease`. Whenever a branch is rebased, rebase every branch stacked on it the same way, onto its new tip
+  from the base noted for it, so that no merged commit is replayed.
+
 ## A subagent's branch
 
-A subagent commits on its own branch and never pushes or merges. Read its report, then its diff yourself
-(`git diff origin/main...<branch>`), and check that the diff is what the report says before you push it. Send fixes back
-to the same subagent rather than finishing its work in its worktree. When main moves under it, have it rebase onto
-`origin/main`.
+A subagent commits on its own branch and never pushes or merges; the coordinator pushes. Read its report, then its diff
+yourself (`git diff origin/main...<branch>`), and check that the diff is what the report says before you push it. Send
+fixes back to the same subagent rather than finishing its work in its worktree. When main moves under it, have it
+rebase onto `origin/main`.

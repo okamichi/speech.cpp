@@ -1,8 +1,10 @@
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include "graph.h"
+#include "layers.h"
 #include "model-file.h"
 
 namespace irodori {
@@ -50,9 +52,11 @@ struct SpeakerScale {
  */
 class Dit {
 public:
-    explicit Dit(const ModelFile & m);
+    /** The DiT of `m` on `backend`, attending as `attention` says or, without it, as attention_on() chooses. */
+    Dit(const ModelFile & m, ggml_backend_t backend, std::optional<Attention> attention = std::nullopt);
 
     bool meanflow() const { return meanflow_; }
+    Attention attention() const { return attention_; }
     int latent_dim() const { return latent_dim_; }
 
     /**
@@ -70,6 +74,7 @@ private:
     bool meanflow_;
     int dim_, heads_, layers_, latent_dim_, timestep_dim_;
     float eps_, theta_;
+    Attention attention_;
 };
 
 /** The official get_timestep_embedding(): cos then sin of t at 256 frequencies, in float32. */

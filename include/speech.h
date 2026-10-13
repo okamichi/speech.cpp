@@ -54,7 +54,7 @@ extern "C" {
  * program built against one major version runs only against a library of the same major version. The shared
  * library's SOVERSION is this number.
  */
-#define SPEECH_API_VERSION_MAJOR 3
+#define SPEECH_API_VERSION_MAJOR 4
 
 /**
  * The minor version of this API. It rises when a function, an option or an enum value is added, and returns to 0
@@ -62,7 +62,7 @@ extern "C" {
  * version and a minor version of m or more. Version 3.0 is first released with speech.cpp 0.7.0, the option prompt
  * included, and a declaration added since says the version that added it.
  */
-#define SPEECH_API_VERSION_MINOR 2
+#define SPEECH_API_VERSION_MINOR 0
 
 /** The SPEECH_API_VERSION_MAJOR the library was built with, for a caller that loads it at run time. */
 SPEECH_API int speech_api_version_major(void);
@@ -154,12 +154,9 @@ SPEECH_API void speech_log_set(speech_log_callback callback, void * user_data);
 /*
  * Devices: the CPU and the GPUs that ggml can run a whole model on, in ggml's order. An accelerator that ggml runs
  * beside the CPU, such as BLAS, cannot run a model by itself and is not listed. The first call that touches a device
- * sets ggml up for the process. On macOS, Metal must run without Metal 4's tensor API, and ggml reads that only from
- * the environment variable GGML_METAL_TENSOR_DISABLE while it lists its devices; the library sets the variable for
- * that listing alone and then restores it, so the host sees the value it had. ggml's Metal backend itself sets
- * AGX_RELAX_CDM_CTXSTORE_TIMEOUT to 1 for the process during that listing, which the library leaves as ggml sets it.
- * Setting the environment is not safe while another thread reads it, so that first call must not run while another
- * thread of the process reads the environment.
+ * sets ggml up for the process. ggml's Metal backend sets the environment variable AGX_RELAX_CDM_CTXSTORE_TIMEOUT to 1
+ * for the process while it lists its devices. Setting the environment is not safe while another thread reads it, so
+ * that first call must not run while another thread of the process reads the environment.
  */
 
 /** The kind of a device. */
@@ -397,9 +394,19 @@ typedef enum speech_option {
     SPEECH_OPT_MAX_SPEECH_DURATION_S = 43,
     /**
      * "irodori_compatible", a boolean: use the official caption token limit and disable guidance for absent caption
-     * and speaker conditions. False keeps strict validation. Added in 3.2.
+     * and speaker conditions. False keeps strict validation. Added in 4.0.
      */
-    SPEECH_OPT_IRODORI_COMPATIBLE = 44
+    SPEECH_OPT_IRODORI_COMPATIBLE = 44,
+    /**
+     * "decode_on_cpu", a boolean: whether a recognition with a model on a GPU decodes its tokens on the CPU, from a
+     * copy of the weights its decoding reads that the model makes there when a request first decodes on the CPU and
+     * then keeps, rather than on the GPU. Each step of such a decoding is a small computation, which the CPU computes
+     * in less time than a round trip to a GPU takes where its weights are quantized, so the model's default is true
+     * where they are quantized and false where they are F16 or F32 (speech_model_info_option_default_bool()). The two
+     * compute in different arithmetic, which can choose another token where two score almost the same. A model on the
+     * CPU decodes there either way. Added in 4.0.
+     */
+    SPEECH_OPT_DECODE_ON_CPU = 45
 } speech_option;
 
 /** The type of an option's values, which names the setter that takes them. */
@@ -451,9 +458,10 @@ SPEECH_API speech_status speech_load_params_set_device(speech_load_params * para
 
 /**
  * The number of threads the CPU computes with, 1 or more: a preference about how the work runs, which applies to
- * whatever the model computes on the CPU, all of its graphs for a model on the CPU and none of them for a model on a
- * GPU. Without it the library takes the machine's performance cores, or its physical cores where the system does not
- * tell them apart. The model's information reports the number in effect (speech_model_info_threads()).
+ * whatever the model computes on the CPU: all of its graphs for a model on the CPU, and for a model on a GPU those it
+ * computes on the CPU, such as a decoding with decode_on_cpu, or none. Without it the library takes the machine's
+ * performance cores, or its physical cores where the system does not tell them apart. The model's information reports
+ * the number in effect (speech_model_info_threads()).
  */
 SPEECH_API speech_status speech_load_params_set_threads(speech_load_params * params, int threads);
 
@@ -709,8 +717,9 @@ SPEECH_API const char * speech_model_info_device(const speech_model_info * info)
 
 /**
  * The number of threads the CPU computes a loaded model's graphs with: the number the load parameters set, or the
- * library's default, for a model on the CPU, and 0 for a model on a GPU, none of whose graphs runs on the CPU. 0 for
- * information read from a file.
+ * library's default, for a model on the CPU and for a model on a GPU that can compute some of its graphs on the CPU (a
+ * model that takes decode_on_cpu), and 0 for a model on a GPU none of whose graphs runs on the CPU. 0 for information
+ * read from a file.
  */
 SPEECH_API int speech_model_info_threads(const speech_model_info * info);
 
@@ -761,7 +770,11 @@ typedef struct speech_model speech_model;
 SPEECH_API speech_status speech_model_load(const char * path, const speech_load_params * params,
                                            speech_model ** model);
 
-/** Frees a model and its device. Every request made for it must be freed first. NULL is ignored. */
+/**
+ * Frees a model and its device. Every request and detection made for it must be freed first. NULL is ignored. A
+ * process frees every model it loaded before it returns from main() or calls exit(): on Metal, ggml aborts a process
+ * that ends with a model still loaded, after its work is done, with SIGABRT.
+ */
 SPEECH_API void speech_model_free(speech_model * model);
 
 /**

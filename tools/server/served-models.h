@@ -5,11 +5,13 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "jobs.h"
 #include "library.h"
 #include "voices.h"
+#include "request-options.h"
 
 // The models the server holds: at most one for speech synthesis, one for speech recognition and one for the detection of
 // speech, which cuts the audio of a transcription into the regions where someone speaks, so that a page can speak and
@@ -37,6 +39,17 @@ public:
     /** Adds a voice from a voice file or a WAVE file, and reads the information again, which then lists it. */
     void add_voice(const std::string & name, const std::string & file);
 
+    /**
+     * Gives the model the defaults of the command line's request options that it takes, checked against it, before the
+     * server listens; a model the page loads later keeps its own.
+     */
+    void set_defaults(std::vector<RequestOption> defaults) { defaults_ = std::move(defaults); }
+    const std::vector<RequestOption> & defaults() const { return defaults_; }
+    /** A request's options on this model after its defaults (with_defaults()). */
+    std::vector<RequestOption> with_defaults(const std::vector<RequestOption> & options) const {
+        return ::with_defaults(defaults_, options);
+    }
+
 private:
     Model model_;
     std::string path_, catalog_name_;
@@ -44,6 +57,7 @@ private:
     Turns turns_;
     mutable std::mutex mutex_;
     std::shared_ptr<const speech_model_info> info_;
+    std::vector<RequestOption> defaults_;
 };
 
 /**

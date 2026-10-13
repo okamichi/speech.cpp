@@ -59,8 +59,8 @@ ggml_tensor * Graph::input(const std::vector<int32_t> & data, int64_t ne0) {
     return t;
 }
 
-ggml_tensor * Graph::half_input(const std::vector<float> & data, int64_t ne0, int64_t ne1) {
-    ggml_tensor * t = ggml_new_tensor_2d(ctx_, GGML_TYPE_F16, ne0, ne1);
+ggml_tensor * Graph::half_input(const std::vector<float> & data, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3) {
+    ggml_tensor * t = ggml_new_tensor_4d(ctx_, GGML_TYPE_F16, ne0, ne1, ne2, ne3);
     ggml_set_input(t);
     uploads_.push_back({t, std::vector<uint8_t>(ggml_nbytes(t))});
     set(t, data);

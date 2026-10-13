@@ -12,8 +12,9 @@ under way stopped by the commit; with turn_detection server_vad, the dumps joine
 of 20 ms cut into the regions that speech vad finds on the CPU, each with its speech_started and speech_stopped at the
 region's bounds, its commit and its completed with the text of the region's samples sent as a WAV file, all of them
 joined into the text of chunking_strategy with the same values; deltas of an utterance appended in real time before its
-commit; a commit and a clear while speech is under way; minutes of silence held within the bound; and server_vad's
-refusals, on a server without a detection model too.
+commit; a commit and a clear while speech is under way; minutes of silence held within the bound; server_vad's
+refusals, on a server without a detection model too; and a detection flag given to the server (--threshold) as turn
+detection's default, before OpenAI's, with a session's own member kept.
 
 usage: python3 checks/smoke/server_realtime_smoke.py <speech> <recognition.gguf> <detection.gguf> <dump folder>... [-- serve options...]
 """
@@ -51,6 +52,19 @@ assert refused["type"] == "error" and refused["error"]["param"] == "session.audi
 ws.close()
 assert alone.stop() == b""
 print(f"realtime server_vad on a server without a detection model: error {refused['error']['code']}: {refused['error']['message'][:80]}")
+
+# The detection options given to the server as flags are turn detection's defaults, before OpenAI's, and a session's own
+# member wins.
+tuned = Server(speech, [model, vad, *options, "--threshold", "0.7"])
+ws = tuned.websocket("/v1/realtime")
+assert ws.event()["type"] == "session.created"
+for given, threshold in (({"type": "server_vad"}, 0.7), ({"type": "server_vad", "threshold": 0.4}, 0.4)):
+    ws.send({"type": "session.update", "session": {"type": "transcription", "audio": {"input": {"turn_detection": given}}}})
+    turns = ws.event()["session"]["audio"]["input"]["turn_detection"]
+    assert turns == {"type": "server_vad", "threshold": threshold, "prefix_padding_ms": 300, "silence_duration_ms": 500}, turns
+ws.close()
+tuned.stop()
+print("realtime server_vad on a server given --threshold 0.7: its threshold 0.7 with OpenAI's other defaults, and a session's 0.4 kept")
 
 server = Server(speech, [model, vad, "--cors-origin", ORIGIN, *options])
 transcribe = server.transcribe

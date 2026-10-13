@@ -60,13 +60,14 @@ speech info irodori-tts-mf
 - **Request options.** `speech tts`, `speech asr` and `speech vad` take every option of the C API's vocabulary as a flag
   of its name in kebab-case: `duration_scale` is `--duration-scale` ([c-api.md](c-api.md#options)). The model refuses
   an option it does not take, as the C API does: Qwen3-TTS answers `--speed 1.5` with `speech: unsupported (speed): ...`.
-  `speech info MODEL` lists the options a model takes, with their defaults and ranges.
+  `speech info MODEL` lists the options a model takes, with their defaults and ranges. `speech serve` and
+  `speech worker` take the same flags as the defaults of their requests.
 - A value follows its flag or an `=`: `--seed 7` or `--seed=7`. A number is read whole: `--steps 4x` is a usage error.
 - A boolean flag alone means true, and takes `true` or `false` only after an `=`: `--timestamps`, `--do-sample=false`.
 - An argument that begins with `-`, such as a text, follows `--`.
 - stdout carries the output alone, and every log goes to stderr.
 - On Windows the command line is read as UTF-8, and stdin and stdout are binary.
-- `speech --version` prints the release and the C API's version: `speech.cpp 0.8.2, C API 3.1`.
+- `speech --version` prints the release and the C API's version: `speech.cpp 0.8.4, C API 4.0`.
 
 | Exit | Meaning |
 |---|---|
@@ -256,22 +257,28 @@ object, for a program that chooses a device before it starts a worker:
 speech models [--json]
 ```
 
-Lists the catalog: each model's name, the type its name alone means, the file's size, whether it is fetched (`yes`, `no`,
-or how much of a stopped fetch is there), its task and languages; the model to start with for each language; and the
-old files in the model folder.
+Lists the catalog: each file of each model, by the name that fetches it, the name alone for the type the name means and
+`NAME:TYPE` for the others, with its type, size, whether it is fetched (`yes`, `no`, or how much of a stopped fetch is
+there), its task and languages; the model to start with for each language; and the old files in the model folder.
 
 ```
-NAME                      TYPE  SIZE     FETCHED  TASK         LANGUAGES
-qwen3-tts-0.6b            q8_0  1.21 GB  no       synthesis    de en es fr it ja ko pt ru zh
+NAME                           TYPE  SIZE     FETCHED  TASK         LANGUAGES
+qwen3-tts-0.6b                 q8_0  1.21 GB  no       synthesis    de en es fr it ja ko pt ru zh
+qwen3-tts-0.6b:q6_k            q6_k  0.99 GB  no       synthesis    de en es fr it ja ko pt ru zh
+qwen3-tts-0.6b:q5_k            q5_k  0.87 GB  no       synthesis    de en es fr it ja ko pt ru zh
+qwen3-tts-0.6b:q4_k            q4_k  0.76 GB  no       synthesis    de en es fr it ja ko pt ru zh
 ...
-reazonspeech-v2           f16   1.24 GB  no       recognition  ja
+reazonspeech-v2                q8_0  0.66 GB  no       recognition  ja
+reazonspeech-v2:f16            f16   1.24 GB  no       recognition  ja
 ...
 
 The model to start with for each language:
-  synthesis    qwen3-tts-0.6b            de en es fr it ja ko pt ru zh
-  recognition  qwen3-asr-0.6b            ar cs da de el en es fa fi fil fr hi hu id it ko mk ms nl pl pt ro ru sv th tr vi yue zh
-               reazonspeech-v2           ja
-               parakeet-tdt-0.6b-v3      bg et hr lt lv mt sk sl uk
+  synthesis    qwen3-tts-0.6b                 de en es fr it ja ko pt ru zh
+  recognition  qwen3-asr-0.6b                 ar cs da de el en es fa fi fil fr hi hu id it ko mk ms nl pl pt ro ru sv th tr vi yue zh
+               reazonspeech-v2                ja
+               parakeet-tdt-0.6b-v3           bg et hr lt lv mt sk sl uk
+
+A subcommand given a NAME[:TYPE] fetches its file the first time; speech pull fetches it ahead, and speech rm removes it.
 
 Old files, which no model of this release names; speech rm --old removes them:
   1.89 GB  sakasegawa--Irodori-TTS-v4.1-Small-MF-GGUF/99e5d77f6d92a70d4b9bff52829ac118fa1bf7d3/Irodori-TTS-848M-MF-v4.1-F16.gguf
@@ -345,9 +352,18 @@ implementation:
 ```
 speech serve [MODEL [MODEL [MODEL]]] [--open] [--host 127.0.0.1] [--port 8080] [--cors-origin ORIGIN|*]...
              [--add-voice NAME=FILE]... [--voices-dir DIR] [--irodori-compatible]
-             [--device NAME] [--threads N] [--no-warmup]
-speech worker MODEL [--add-voice NAME=FILE]... [--device NAME] [--threads N] [--no-warmup]
+             [--device NAME] [--threads N] [--no-warmup] [request options]
+speech worker MODEL [--add-voice NAME=FILE]... [--device NAME] [--threads N] [--no-warmup] [request options]
 ```
 
 [server.md](server.md) and [worker.md](worker.md) describe them. `speech serve` takes a detection model beside a
 synthesis and a recognition model, for transcriptions by regions; the worker takes none.
+
+A request option given as a flag is the default of every request that does not set it, in place of the model's own:
+`speech serve irodori-tts-mf --steps 8` samples in 8 steps unless a request sets `steps`. A request's own value wins,
+and an option no model given takes, or a value out of its range, stops the program before it serves.
+
+`speech serve` gives a flag to every model given that takes the option. After `tts.`, `asr.` or `vad.` it gives it to
+the synthesis, recognition or detection model alone, and wins over the same flag without one:
+`speech serve qwen3-tts-0.6b qwen3-asr-0.6b --language ja --asr.language auto`. The worker's `ready` and the server's
+`/v1/models` list the defaults given.

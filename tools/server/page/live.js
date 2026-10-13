@@ -3,7 +3,7 @@
 
 import { Recorder } from './audio.js';
 import { RATE, RealtimeTranscription } from './live-realtime.js';
-import { OptionForm } from './options.js';
+import { OptionForm, withServerDefaults } from './options.js';
 import { length, TranscriptView } from './transcript.js';
 
 const $ = (id) => document.getElementById(id);
@@ -31,6 +31,10 @@ export class LivePanel {
   #ticking = 0;
   #busy;
   #view = new TranscriptView($('live-transcript'));
+  /** The pause the page gives a detection model the server was not started with a pause for: OpenAI's server_vad default. */
+  #silence = $('live-silence').defaultValue;
+  /** The range of pauses the field offers, which widens to take the one the server was started with. */
+  #bounds = [Number($('live-silence').min), Number($('live-silence').max)];
 
   /** `busy(running)` follows the start and the end of each run, which the panel's tab shows. */
   constructor(busy) {
@@ -61,7 +65,7 @@ export class LivePanel {
     this.#held = held;
     if (held) {
       const kept = this.#options?.values() ?? {};
-      this.#options = new OptionForm(held.model, $('live-options'), null, SESSION_OPTIONS);
+      this.#options = new OptionForm(withServerDefaults(held), $('live-options'), null, SESSION_OPTIONS);
       this.#options.restore(kept);
     } else {
       $('live-options').replaceChildren();
@@ -70,10 +74,17 @@ export class LivePanel {
     this.#ready();
   }
 
-  /** Shows the detection model held, which finds where each utterance starts and ends; a run going on ends. */
+  /**
+   * Shows the detection model held, which finds where each utterance starts and ends; a run going on ends. The pause
+   * starts at the one the server was started with, unless the user set one.
+   */
   showDetection(held) {
     this.#end();
     this.#detection = held;
+    const silence = $('live-silence');
+    silence.defaultValue = held?.defaults?.min_silence_duration_ms ?? this.#silence;
+    silence.min = Math.min(this.#bounds[0], silence.defaultValue);
+    silence.max = Math.max(this.#bounds[1], silence.defaultValue);
     this.#ready();
   }
 

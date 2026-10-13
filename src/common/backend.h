@@ -6,8 +6,8 @@
 #include "ggml-backend.h"
 
 /**
- * Sets ggml up for this process once: its messages go through log.h, and Metal does not run matrix products through
- * Metal 4's tensor API. Every function here calls it before it touches a device.
+ * Sets ggml up for this process once, its messages going through log.h. Every function here calls it before it touches
+ * a device.
  */
 void start_ggml();
 

@@ -51,8 +51,6 @@ writes the released F16 and Q8_0 files byte for byte (`checks/compare/quantize_c
 - **The metadata is copied from the file's own bytes.** gguf's writer writes a tensor's axes up to its last above 1,
   where gguf-py writes every axis of the numpy array: through it a kernel of width 1, `[768, 768, 1]` in a released
   file, would become `[768, 768]`, and the file would differ from the released one.
-- **Lower bit widths are extra files**, offered beside the recommended type with their measured accuracy, never as the
-  recommended file.
 
 The alternatives were turned down:
 

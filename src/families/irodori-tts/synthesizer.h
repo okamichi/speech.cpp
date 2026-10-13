@@ -91,7 +91,8 @@ struct Stats {
  */
 class Synthesizer {
 public:
-    Synthesizer(const std::string & model_path, ggml_backend_t backend);
+    /** The model at `model_path` on `backend`, its DiT attending as `attention` says or as attention_on() chooses. */
+    Synthesizer(const std::string & model_path, ggml_backend_t backend, std::optional<Attention> attention = std::nullopt);
     ~Synthesizer();
 
     /**
@@ -107,6 +108,8 @@ public:
 
     int sample_rate() const { return codec_.sample_rate(); }
     const ModelFile & model() const { return *model_; }
+    /** How the DiT attends. */
+    Attention attention() const { return dit_.attention(); }
     const Codec & codec() const { return codec_; }
     /** The guidance and the cut at the tail of a request that asks for none of its own. */
     const Guidance & default_guidance() const { return sampler_.guidance(); }
@@ -118,9 +121,9 @@ public:
 
     /**
      * How the decoder sizes its windows, a short first one of 12 frames, which brings the first audio early, and the
-     * later ones as it measures its speed, for a codec's frames (synthesizer.cpp says why).
+     * later ones as it measures its speed, for a codec's frames and its decoder's margin (synthesizer.cpp says why).
      */
-    static WindowRule window_rule(int hop, int sample_rate);
+    static WindowRule window_rule(int hop, int sample_rate, int margin);
 
 private:
     ggml_backend_t backend_;

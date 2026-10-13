@@ -151,6 +151,17 @@ private:
     std::vector<std::pair<std::string, JsonValue>> options_;
 };
 
+/**
+ * The attention that the check's argument `index` forces, "flash" or "products", or none where the argument is absent,
+ * so that both attentions are checked on a GPU.
+ */
+inline std::optional<irodori::Attention> forced_attention(const std::vector<std::string> & args, size_t index) {
+    if (args.size() <= index) return std::nullopt;
+    if (args[index] == "flash") return irodori::Attention::Flash;
+    if (args[index] == "products") return irodori::Attention::Products;
+    throw std::runtime_error("the attention is flash or products, not " + args[index]);
+}
+
 /** The dumps under `root` made with the model of `repository` that hold `file`, sorted by their folders' names. */
 inline std::vector<IrodoriDump> irodori_dumps(const std::string & root, const std::string & repository, const std::string & file) {
     std::vector<std::filesystem::path> dirs;

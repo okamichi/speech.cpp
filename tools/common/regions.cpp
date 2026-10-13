@@ -27,14 +27,14 @@ std::pair<size_t, size_t> region_samples(const Region & region, int rate, size_t
     return {at(region.start), at(region.end)};
 }
 
-std::vector<RequestOption> region_options(const std::vector<RequestOption> & given) {
+std::vector<RequestOption> region_options(const std::vector<RequestOption> & given, const std::vector<RequestOption> & defaults) {
     std::vector<RequestOption> out = {
         {SPEECH_OPT_THRESHOLD, 0.5},
         {SPEECH_OPT_SPEECH_PAD_MS, (int64_t) 300},
         {SPEECH_OPT_MIN_SILENCE_DURATION_MS, (int64_t) 500},
         {SPEECH_OPT_MAX_SPEECH_DURATION_S, kLongestRegion},
     };
-    for (const RequestOption & o : given) {
+    for (const RequestOption & o : with_defaults(defaults, given)) {
         const auto same = std::find_if(out.begin(), out.end(), [&](const RequestOption & d) { return d.option == o.option; });
         if (same != out.end()) *same = o;
         else out.push_back(o);

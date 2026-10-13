@@ -71,22 +71,22 @@ int TailCut::flattening_point(const std::vector<float> & latent, int frames, int
  * 0.7.1 through the worker on speech-bench's 20 sentences) the 48-frame second window came 0.288 s after the first
  * window's 0.48 s, and on an RTX 2080 0.32 s, so a machine half as fast as the M5 ran dry between them.
  *
- * Each window decodes 10 frames on either side of its own (Codec::kDecoderMargin): 12 frames decode 32, 24 decode 44
- * and 48 decode 68. A floor of 24 halves the wait for a window against 48 for 29% more decoding per second of audio,
- * where 12 would cost 88% more, which a machine that decodes 48-frame windows barely faster than real time could not
- * afford. The ceiling is 48, 0.7.1's window, so that a cancel and the silence between a worker's chunks never wait
- * longer than they did.
+ * Each window decodes the frames on either side of its own that the decoder's receptive field reaches, 8 for
+ * Semantic-DACVAE-Japanese-32dim: 12 frames decode 28, 24 decode 40 and 48 decode 64. A floor of 24 halves the wait for
+ * a window against 48 for 25% more decoding per second of audio, where 12 would cost 75% more, which a machine that
+ * decodes 48-frame windows barely faster than real time could not afford. The ceiling is 48, 0.7.1's window, so that a
+ * cancel and the silence between a worker's chunks never wait longer than they did.
  *
  * The sizes may follow the clock because the audio does not depend on them: the decoder is convolutions without a
- * cache, and a margin of 10 frames covers its receptive field of 7.7, so decoding in windows of any sizes gives the
- * samples of decoding at once, bit for bit on the CPU and on Metal (irodori-codec-check), and a seed repeats its
- * samples. Qwen3-TTS's chunked codec differs by up to 7e-4 between chunkings and keeps a fixed schedule.
+ * cache, and the margin covers its receptive field, so decoding in windows of any sizes gives the samples of decoding
+ * at once, bit for bit on the CPU and on Metal (irodori-codec-check), and a seed repeats its samples. Qwen3-TTS's
+ * chunked codec differs by up to 7e-4 between chunkings and keeps a fixed schedule.
  */
-WindowRule Synthesizer::window_rule(int hop, int sample_rate) {
-    return {12, 24, 48, Codec::kDecoderMargin, (double) hop / sample_rate, 0.1};
+WindowRule Synthesizer::window_rule(int hop, int sample_rate, int margin) {
+    return {12, 24, 48, margin, (double) hop / sample_rate, 0.1};
 }
 
-Synthesizer::Synthesizer(const std::string & model_path, ggml_backend_t backend)
+Synthesizer::Synthesizer(const std::string & model_path, ggml_backend_t backend, std::optional<Attention> attention)
     : backend_(backend),
       model_(std::make_unique<ModelFile>(model_path, backend, model_layout)),
       codec_(*model_, backend),
@@ -94,7 +94,7 @@ Synthesizer::Synthesizer(const std::string & model_path, ggml_backend_t backend)
       text_(*model_),
       speaker_(*model_),
       duration_(*model_),
-      dit_(*model_),
+      dit_(*model_, backend, attention),
       sampler_(dit_, *model_, backend),
       reference_(*model_),
       tail_(*model_) {
@@ -221,7 +221,7 @@ size_t Synthesizer::synthesize(const Request & r, const Voice & voice, const Aud
     size_t emitted = 0;
     {
         Timer t{st.codec};
-        const WindowRule rule = window_rule(codec_.hop(), codec_.sample_rate());
+        const WindowRule rule = window_rule(codec_.hop(), codec_.sample_rate(), codec_.decoder_margin());
         codec_.decode(x, samples, [&](const DecodeProgress & p) { return next_window(rule, p); }, [&](const float * s, size_t n) {
             if (emitted == 0) st.first_audio = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
             emitted += n;

@@ -33,7 +33,7 @@ int main(int argc, char ** argv) {
         const ModelFile model(args[1], backend, irodori::model_layout);
         const irodori::Tokenizer tokenizer(model);
         const irodori::TextEncoder encoder(model);
-        const irodori::Dit dit(model);
+        const irodori::Dit dit(model, backend);
         const irodori::Sampler sampler(dit, model, backend);
         auto allocr = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
         bool ok = true;

@@ -126,6 +126,18 @@ A request speaks at most 30 s. A text whose speech the model predicts to last lo
 the worker cuts a text it is refused after its sentences, its commas or its spaces. A
 `speed` above 1 that brings the length within 30 s is followed.
 
+## Long sentences
+
+v4.1-Small-MF can slur or garble a few words in the middle of a long sentence and then speak normally again. In our
+listening (F16 on Metal, and the official runtime in F32), it began at about 18 s of speech, about 100 characters, and
+was more frequent past 20 s; the official runtime does the same from the same noise. A sentence within 30 s is still
+spoken in one request, so to avoid it:
+
+- Cut a long sentence at its commas yourself. `speech tts` and `speech serve` cut a text at the ends of its sentences,
+  and at its commas only when a sentence is too long for one request.
+- Give a reference or a voice file, so that every part keeps one voice. With the voice `none`, the model may choose
+  another voice for each part.
+
 ## Instructions
 
 `instructions` describes the voice and the way of speaking: 「落ち着いた女性の声で、近い距離感でやわらかく自然に読み上げてください。」.
@@ -160,6 +172,22 @@ Every stage is checked against the official implementation's tensors on an Apple
 
 On a GPU the audio is the same speech rather than the same waveform, since the GPU's matrix kernels round differently.
 
+## Weight types
+
+Each model comes in five types; `NAME:TYPE` fetches one (`speech tts irodori-tts:q8_0`). speech-bench on 2026-10-12, on
+an Apple M5 with Metal: the 20 sentences of its `prompts/speak-ja-JP.json` in a voice file of one reference, seeds 1, 2
+and 3, v4.1-Small with 16 steps, as Qwen3-ASR 1.7B hears them. The memory is the peak of one request. The codec stays
+F32 in every type, which is why the files shrink less than the other models'. The CER of one type moves by a point or
+two from seed to seed; v4.1-Small-MF's is higher in every quantized type than in F16.
+
+| Type | v4.1-Small-MF file | Memory | CER | v4.1-Small file | Memory | CER |
+|---|---|---|---|---|---|---|
+| F16 | 1.92 GB | 2.04 GB | 5.92% | 1.91 GB | 2.03 GB | 3.43% |
+| Q8_0 | 1.21 GB | 1.33 GB | 8.35% | 1.20 GB | 1.32 GB | 4.09% |
+| Q6_K | 1.04 GB | 1.16 GB | 7.35% | 1.03 GB | 1.16 GB | 3.65% |
+| Q5_K | 0.95 GB | 1.07 GB | 7.74% | 0.94 GB | 1.07 GB | 4.37% |
+| Q4_K | 0.86 GB | 0.99 GB | 7.57% | 0.86 GB | 0.98 GB | 4.54% |
+
 ## Speed
 
 speech-bench on 2026-10-08: the 20 sentences of its `prompts/speak-ja-JP.json` in a voice file of one reference, seed
@@ -173,5 +201,5 @@ speech-bench on 2026-10-08: the 20 sentences of its `prompts/speak-ja-JP.json` i
 | v4.1-Small, 16 steps | RTX 2080, Vulkan | 0.52 s | 1.12 s | 0.13 | 3.2% |
 
 The first audio waits for the whole sentence's sampling, so it grows with the sentence. v4.1-Small's default of 40
-steps takes about 2.4 times as long as 16. The worker takes 2.2 GB of memory with F16 weights, and 1.5 GB with Q8_0,
-which speaks as fast.
+steps takes about 2.4 times as long as 16. Over the same 20 sentences on the M5, the worker's memory peaks at 2.06 GB
+with F16 weights and 1.35 GB with Q8_0, which speaks as fast.

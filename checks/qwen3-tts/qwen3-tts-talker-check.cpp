@@ -1,13 +1,15 @@
 // Checks the talker and the code predictor against a reference dump.
 //
 // The prompt comes first, with the tokens of the dump's instruction where it has one, from speech.cpp's tokenizer.
-// Teacher forcing then feeds the reference codes frame by frame and compares every stage's output, so the
-// first stage that departs is the one reported. A free-running greedy decode then shows whether the
-// same codes come out. It fails when the instruction's tokens or the prompt's rows differ, when a stage parts from
-// the reference further than its arithmetic explains, or when the greedy decode picks another code than the reference
-// where the reference's logit of its own pick exceeds that of the other by more than twice the largest error of that
-// stack's logits under teacher forcing, which each of the two logits may have in opposite directions: a departure at a
-// nearer tie is one the arithmetic explains, and the codes after it are no longer comparable.
+// Teacher forcing then feeds the reference codes frame by frame and compares every stage's output, the code
+// predictor's a step at a time, so the first stage that departs is the one reported. A free-running greedy decode then
+// shows whether the same codes come out, the code predictor making each frame in one graph, whose logits are compared
+// with the reference's while the decode has picked the reference's codes. It fails when the instruction's tokens or the
+// prompt's rows differ, when a stage parts from the reference further than its arithmetic explains, or when the greedy
+// decode picks another code than the reference where the reference's logit of its own pick exceeds that of the other by
+// more than twice the largest error of that stack's logits under teacher forcing, which each of the two logits may have
+// in opposite directions: a departure at a nearer tie is one the arithmetic explains, and the codes after it are no
+// longer comparable.
 //
 // It takes an F32 file. The talker keeps its keys and values in F16, which parts its logits and hidden states from the
 // official float32 by a relative 1.7e-3 at most and the code predictor's logits by 1.9e-3, on the CPU and on the Metal
@@ -161,6 +163,10 @@ int main(int argc, char ** argv) {
     w_cp.print("code predictor logits");
 
     // Free-running greedy decode with the official talker settings, as dump.py ran it.
+    // The graph's error in all, and at each step, so that the first step that departs shows.
+    Worst w_frame;
+    std::vector<Worst> w_frame_steps((size_t) n_groups - 1);
+    bool one_graph = true;
     SamplingParams talker_p = generation.talker;
     talker_p.greedy = true;
     SamplingParams cp_p = generation.code_predictor;
@@ -197,18 +203,35 @@ int main(int argc, char ** argv) {
         }
         if (codes[0] == ids.codec_eos) break;
         history.push_back(codes[0]);
+        one_graph &= talker.cp_frame(codes[0], cp_p, {}, &codes[1]);
         for (int g = 1; g < n_groups; g++) {
-            // The code predictor's repetition penalty sees the codes of the frame it has made, as the synthesis gives it.
-            const std::vector<int32_t> made(codes.begin() + 1, codes.begin() + g);
-            codes[g] = sample(g == 1 ? talker.cp_begin(codes[0]) : talker.cp_next(g - 1, codes[g - 1]), cp_p, made, none, rng);
-            if (f < n_frames) compare(f, g, codes[g], &ref_cp.f32[((size_t) f * (n_groups - 1) + g - 1) * talker.cp_vocab()]);
+            const float * ref_row = &ref_cp.f32[((size_t) f * (n_groups - 1) + g - 1) * talker.cp_vocab()];
+            if (!one_graph) {
+                // The code predictor's repetition penalty sees the codes of the frame it has made, as the synthesis gives it.
+                const std::vector<int32_t> made(codes.begin() + 1, codes.begin() + g);
+                codes[g] = sample(g == 1 ? talker.cp_begin(codes[0]) : talker.cp_next(g - 1, codes[g - 1]), cp_p, made, none, rng);
+            } else if (f < n_frames && diff_frame < 0) {
+                // The graph's logits of a code whose frame and frames before follow the reference read what the reference's did.
+                const std::vector<float> got = talker.cp_frame_logits(g - 1);
+                w_frame.add(got.data(), ref_row, talker.cp_vocab());
+                w_frame_steps[(size_t) g - 1].add(got.data(), ref_row, talker.cp_vocab());
+            }
+            if (f < n_frames) compare(f, g, codes[g], ref_row);
         }
         talker.step(codes.data(), prompt.frame_extra);
         frames++;
     }
+    if (one_graph) {
+        w_frame.print("code predictor in a graph");
+        for (size_t step = 0; step < w_frame_steps.size(); step++) {
+            w_frame_steps[step].print(("  step " + std::to_string(step) + ", code " + std::to_string(step + 1)).c_str());
+        }
+    }
+    else std::printf("the device cannot compute the code predictor's frame in one graph, which the decode made a step at a time\n");
+    std::printf("code predictor graphs: %.2f MiB on the device\n", talker.cp_graph_bytes() / 1048576.0);
     ggml_backend_free(backend);
     bool ok = w_prompt.rel <= kPromptTolerance && w_logits.rel <= kStageTolerance && w_hidden.rel <= kStageTolerance &&
-              w_cp.rel <= kStageTolerance;
+              w_cp.rel <= kStageTolerance && w_frame.rel <= kStageTolerance;
     if (diff_frame < 0) {
         std::printf("greedy decode: the reference's %d frames\n", n_frames);
     } else {

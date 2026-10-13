@@ -19,7 +19,7 @@ Decoder::Decoder(const ModelFile & m, ggml_backend_t backend, ggml_type cache_ty
     : m_(m),
       backend_(backend),
       stack_(m, backend, "dec", read_qwen3_shape(m, "qwen3-asr.decoder"), m.u32("qwen3-asr.decoder.max_position_embeddings"), cache_type,
-             kQwen3BlockRows, attention),
+             Qwen3Readback::Logits, kQwen3BlockRows, attention),
       max_new_tokens_(m.u32("qwen3-asr.generation.max_new_tokens")),
       eos_(m.i32_array("qwen3-asr.generation.eos_ids")),
       allocr_(ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend))) {}
