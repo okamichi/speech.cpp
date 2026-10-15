@@ -15,10 +15,10 @@
 #include "wave-input.h"
 
 // speech asr: recognizes the speech in WAVE files and writes each file's text to stdout in the order the files are
-// given, as text or as one JSON object per file, and reports on stderr the load and, for each file, its seconds of
-// audio, the time to its text and the real-time factor. With --vad it transcribes each file by the regions where a
-// detection model finds that someone speaks, and PCM from stdin (-) or the microphone (--live) region by region as the
-// audio arrives (asr-stream.h).
+// given, as text or as one JSON object per file, and reports on stderr the load time and, for each file, its seconds
+// of audio, the time to its text and the RTFx, the seconds of audio over the seconds they took. With --vad it
+// transcribes each file by the regions where a detection model finds that someone speaks, and PCM from stdin (-) or the
+// microphone (--live) region by region as the audio arrives (asr-stream.h).
 
 namespace {
 
@@ -114,7 +114,7 @@ int run_asr(const CommandLine & line, FILE * out) {
         const ModelInfo d = model_info(detection->model.get());
         by = ", by the regions of " + std::string(speech_model_info_name(d.get())) + " on " + speech_model_info_device(d.get());
     }
-    std::fprintf(stderr, "load %.2f s: %s on %s%s\n", seconds_since(t0), speech_model_info_name(m), speech_model_info_device(m), by.c_str());
+    std::fprintf(stderr, "load time %.2f s: %s on %s%s\n", seconds_since(t0), speech_model_info_name(m), speech_model_info_device(m), by.c_str());
     if (line.has("-v")) {
         std::string languages;
         for (size_t i = 0; i < speech_model_info_language_count(m); i++) languages += (i ? ", " : "") + std::string(speech_model_info_language(m, i));
@@ -160,7 +160,7 @@ int run_asr(const CommandLine & line, FILE * out) {
             for (const Timed & s : transcript.segments) std::fprintf(out, "%s\t%.3f\t%.3f\t%s\n", path.c_str(), s.start, s.end, s.text.c_str());
         }
         std::fflush(out);
-        std::fprintf(stderr, "%s: %.2f s of audio in %.3f s, RTF %.3f", path.c_str(), audio, took, took / audio);
+        std::fprintf(stderr, "%s: %.2f s of audio in %.3f s, RTFx %.1f", path.c_str(), audio, took, audio / took);
         if (detection) std::fprintf(stderr, ", %zu region%s", regions, regions == 1 ? "" : "s");
         std::fprintf(stderr, "\n");
         if (transcript.stop == SPEECH_STOP_MODEL_LIMIT) {
@@ -172,7 +172,7 @@ int run_asr(const CommandLine & line, FILE * out) {
         busy += took;
     }
     if (line.args.size() > 2) {
-        std::fprintf(stderr, "%zu files, %.2f s of audio in %.3f s, RTF %.3f\n", line.args.size() - 1, audio_total, busy, busy / audio_total);
+        std::fprintf(stderr, "%zu files, %.2f s of audio in %.3f s, RTFx %.1f\n", line.args.size() - 1, audio_total, busy, audio_total / busy);
     }
     return model_limit ? 3 : 0;
 }
@@ -214,5 +214,6 @@ Command asr_command() {
     c.min_args = 1;
     c.max_args = SIZE_MAX;
     c.run = run_asr;
+    c.release_notice = ReleaseNotice::AtEnd;
     return c;
 }

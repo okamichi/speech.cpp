@@ -31,8 +31,8 @@ where someone speaks in them, transcribes the microphone as someone speaks (`spe
 API and its Realtime transcription over HTTP, and runs a worker process for any program that keeps models loaded between
 requests, [ASIST](https://github.com/nyosegawa/asist) among them.
 
-**The first audio in a quarter of a second or less.** On an Apple M5, Qwen3-TTS 0.6B sends its first audio 0.04 s
-after the text and Irodori-TTS 0.25 s after it, and the rest follows while it plays.
+**A time to first audio of a quarter of a second or less.** On an Apple M5, Qwen3-TTS 0.6B sends its first audio
+0.035 s after the text and Irodori-TTS v4.1-Small-MF 0.22 s after it, and the rest follows while it plays.
 
 **One executable, nothing else to install.** No Python and no CUDA: `speech` fetches each model by name, one GGUF file
 with its codec, and runs it on Metal, Vulkan or the CPU.
@@ -61,7 +61,7 @@ implementation, from the same inputs.
 | Task | Name | Languages | Good at |
 |---|---|---|---|
 | Synthesis | [`qwen3-tts-0.6b`](https://huggingface.co/sakasegawa/Qwen3-TTS-12Hz-0.6B-CustomVoice-GGUF), [`qwen3-tts-1.7b`](https://huggingface.co/sakasegawa/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF) | de en es fr it ja ko pt ru zh | nine named speakers; audio that streams from its first frame of 0.08 s; the 1.7B model follows an instruction of how to speak |
-| Synthesis | [`irodori-tts-mf`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF), [`irodori-tts`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-GGUF) | ja | Japanese in the voice of a reference recording, or in a voice described in words |
+| Synthesis | [`irodori-tts-mf`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF), [`irodori-tts`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-GGUF), [`irodori-tts-large`](https://huggingface.co/sakasegawa/Irodori-TTS-v4-Large-GGUF) | ja | Japanese in the voice of a reference recording, or in a voice described in words; the large model follows both more closely |
 | Recognition | [`qwen3-asr-0.6b`](https://huggingface.co/sakasegawa/Qwen3-ASR-0.6B-GGUF), [`qwen3-asr-1.7b`](https://huggingface.co/sakasegawa/Qwen3-ASR-1.7B-GGUF) | 30 languages | finds the language itself, takes a prompt of names and terms, and up to 20 minutes at once |
 | Recognition | [`reazonspeech-v2`](https://huggingface.co/sakasegawa/reazonspeech-nemo-v2-GGUF) | ja | Japanese with punctuation, in recordings of many minutes |
 | Recognition | [`parakeet-tdt_ctc-0.6b-ja`](https://huggingface.co/sakasegawa/parakeet-tdt_ctc-0.6b-ja-GGUF) | ja | short Japanese utterances, fast, with times |
@@ -89,9 +89,10 @@ irm https://raw.githubusercontent.com/nyosegawa/speech.cpp/main/install.ps1 | ie
 ```
 
 The installer checks the release's archive against its SHA-256, puts `speech` under your home folder, and adds it to
-`PATH`. Run it again to update. On Linux it installs the Vulkan build when the Vulkan loader is installed, and the CPU
-build otherwise; the Linux builds need glibc 2.34 or later. [docs/install.md](docs/install.md) has the options, how to
-uninstall, and what each platform needs. On an Intel Mac or another system, [build from source](docs/install.md#build-from-source).
+`PATH`. `speech update`, or running it again, updates it. On Linux it installs the Vulkan build when the Vulkan loader
+is installed, and the CPU build otherwise; the Linux builds need glibc 2.34 or later. [docs/install.md](docs/install.md)
+has the options, how to uninstall, and what each platform needs. On an Intel Mac or another system, [build from
+source](docs/install.md#build-from-source).
 
 ## Quick start
 
@@ -131,6 +132,7 @@ uninstall, and what each platform needs. On an Intel Mac or another system, [bui
 | `speech devices` | lists the devices a model can run on |
 | `speech models`, `pull`, `rm` | list, fetch and remove models |
 | `speech quantize` | writes a model file of F32 weights in F16, Q8_0 or a smaller type |
+| `speech update` | installs the latest release, or says whether one is out |
 | `speech serve` | serves models over HTTP with OpenAI's audio API, and a page to try them |
 | `speech worker` | serves a model over JSON Lines on stdin and stdout, for programs |
 
@@ -186,29 +188,30 @@ does: one request per line on stdin, its audio or text and one terminal message 
 Every stage of each port is compared with tensors dumped from the official implementation. The recognizers write the
 official text on every check input in F32 and F16.
 
-Measured with [speech-bench](https://github.com/nyosegawa/speech-bench) on 2026-10-08, on an Apple M5 (Metal) and an
-RTX 2080 (Vulkan), one request at a time. Speech: 20 Japanese sentences, the time to the first audio, the real-time
-factor, and the CER of the speech as Qwen3-ASR 1.7B hears it.
+Measured with [speech-bench](https://github.com/nyosegawa/speech-bench) on 2026-10-14, on an Apple M5 (Metal) and an
+RTX 2080 (Vulkan), one request at a time. Speech: 20 Japanese sentences with seeds 1 and 2, three rounds, Irodori-TTS
+in the voice of one reference recording; the p50 time to first audio, the RTFx (the seconds of audio over the seconds
+they took, so larger is faster), and the CER of the speech as Qwen3-ASR 1.7B hears it.
 
-| Model | First audio, M5 / RTX 2080 | Real-time factor | CER |
+| Model | Time to first audio, M5 / RTX 2080 | RTFx | CER |
 |---|---|---|---|
-| `qwen3-tts-0.6b`, Q8_0 | 0.04 s / 0.03 s | 0.31 / 0.27 | 5.8% / 8.0% |
-| `qwen3-tts-1.7b`, Q8_0 | 0.06 s / 0.04 s | 0.42 / 0.32 | 3.0% / 2.8% |
-| `irodori-tts-mf`, F16 | 0.25 s / 0.12 s | 0.17 / 0.07 | 6.1% / 7.1% |
-| `irodori-tts`, F16, 16 steps | 1.24 s / 0.52 s | 0.34 / 0.13 | 3.2% / 3.2% |
+| `qwen3-tts-0.6b`, Q8_0 | 0.035 s / 0.024 s | 3.7 / 5.2 | 6.4% / 6.0% |
+| `qwen3-tts-1.7b`, Q8_0 | 0.057 s / 0.032 s | 2.6 / 4.2 | 4.2% / 6.1% |
+| `irodori-tts-mf`, F16 | 0.22 s / 0.12 s | 7.7 / 18 | 6.7% / 6.4% |
+| `irodori-tts`, F16, 16 steps | 1.15 s / 0.52 s | 3.5 / 8.5 | 3.2% / 3.2% |
+| `irodori-tts-large`, Q8_0, 16 steps | 4.44 s / 1.25 s | 0.98 / 3.3 | 5.5% / 5.5% |
 
 Recognition: the 4,483 utterances of Common Voice 8.0's Japanese test set, trimmed to the voice, with the CER that
-accepts other spellings of the same words in parentheses, and parakeet-tdt-0.6b-v3 on 300 English utterances of FLEURS.
-FastConformer's times were measured on 2026-10-12 by speech-bench, one request at a time, on the first 100 Japanese
-utterances (99 kept by VAD) and the 300 English ones (299 kept); its accuracy and timing use separate sample counts.
+accepts other spellings of the same words in parentheses, the same on both machines, and the p50 latency over the same
+utterances; parakeet-tdt-0.6b-v3 on 300 English utterances of FLEURS, three rounds.
 
-| Model | CER on Common Voice ja | Median time, M5 / RTX 2080 |
+| Model | CER on Common Voice ja | p50 latency, M5 / RTX 2080 |
 |---|---|---|
-| `parakeet-tdt_ctc-0.6b-ja`, Q8_0 | 7.9% (3.0%) | 0.05 s / 0.04 s |
-| `reazonspeech-v2`, Q8_0 | 12.1% (7.2%) | 0.08 s / 0.11 s |
-| `qwen3-asr-0.6b`, Q8_0 | 11.9% (7.0%) | 0.13 s / 0.09 s |
-| `qwen3-asr-1.7b`, Q8_0 | 9.5% (4.7%) | 0.31 s / 0.16 s |
-| `parakeet-tdt-0.6b-v3`, F16 | WER 8.8% on FLEURS en | 0.09 s / 0.10 s |
+| `parakeet-tdt_ctc-0.6b-ja`, Q8_0 | 7.9% (3.0%) | 0.045 s / 0.050 s |
+| `reazonspeech-v2`, Q8_0 | 12.0% (7.1%) | 0.063 s / 0.092 s |
+| `qwen3-asr-0.6b`, Q8_0 | 11.9% (7.0%) | 0.127 s / 0.073 s |
+| `qwen3-asr-1.7b`, Q8_0 | 9.5% (4.7%) | 0.312 s / 0.140 s |
+| `parakeet-tdt-0.6b-v3`, F16 | WER 8.8% on FLEURS en | 0.077 s / 0.095 s |
 
 Each model's page has more.
 
@@ -231,6 +234,8 @@ MIT, see [LICENSE](LICENSE). The model weights are their authors':
 - Qwen3-TTS and Qwen3-ASR are the Qwen team's, under the Apache License 2.0.
 - Irodori-TTS v4.1-Small and v4.1-Small-MF are Aratako's, under the MIT License with the ethical restrictions of their
   model cards: no voice cloning without consent, no deepfakes or misinformation.
+- Irodori-TTS v4-Large is Aratako's, under the Gemma Terms of Use, since its text encoder derives from Google's
+  T5Gemma 2, with the same ethical restrictions.
 - Semantic-DACVAE-Japanese-32dim, the codec in the Irodori-TTS files, is Aratako's under the MIT License. It derives
   from Meta's facebook/dacvae-watermarked, under the Apache License 2.0; the SAM License that its card's text also
   names was corrected to Apache-2.0 in facebookresearch/dacvae on 2025-12-19.

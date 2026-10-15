@@ -159,7 +159,7 @@ export class SpeakPanel {
       this.#status('');
     }
     if (!firstAudio) return;
-    const parts = [model, `first audio after ${((firstAudio - started) / 1000).toFixed(2)} s`,
+    const parts = [model, `time to first audio ${((firstAudio - started) / 1000).toFixed(2)} s`,
       `made in ${((performance.now() - started) / 1000).toFixed(2)} s`];
     if (done) parts.push(`seed ${done.seed}`);
     if (done && STOPS[done.stop]) parts.push(STOPS[done.stop]);

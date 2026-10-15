@@ -41,18 +41,19 @@ from irodori_tts import inference_runtime
 from irodori_tts.model import precompute_freqs_cis
 from safetensors import safe_open
 
+from transformers.models.t5gemma2.modeling_t5gemma2 import sliding_window_mask_function
+
 from pins import CODEC, MODELS, snapshot
-from gguf_tokenizer import write_tokenizer
 
 ARCH = "irodori-tts"
 # Each layout this converter has written, with the first release of speech.cpp whose reader takes it; it writes the
 # last.
-RELEASES = {1: "0.7.0", 2: "0.8.0", 3: "0.9.0"}
+RELEASES = {1: "0.7.0", 2: "0.8.0", 3: "0.8.7"}
 LAYOUT = max(RELEASES)
 # The SPDX identifier of each license a model card names.
-LICENSES = {"mit": "MIT", "gemma": "LicenseRef-Gemma"}
+LICENSES = {"mit": "MIT", "gemma": "gemma"}
 # The parts of each model's name under GGUF's naming convention (ggml's docs/gguf.md) besides the size. The names' word
-# for the size, Small, gives way to a size label counted from the parameters of the file's tensors, since the
+# for the size, Small or Large, gives way to a size label counted from the parameters of the file's tensors, since the
 # convention's size label is a number; MF is v4.1-Small distilled with MeanFlow.
 NAMES = {"large": {"basename": "Irodori-TTS", "finetune": None, "version": "v4"},
          "anime": {"basename": "Irodori-TTS", "finetune": "Anime", "version": "v4.1"},
@@ -88,16 +89,12 @@ if not args.check_only and "sha256" in pin:
 checkpoint = safe_open(os.path.join(model_dir, "model.safetensors"), "np")
 config = json.loads(checkpoint.metadata()["config_json"])
 text_config = json.loads(checkpoint.metadata()["text_encoder_config_json"])
-assert config["text_encoder_type"] == "pretrained"
-encoder_type = text_config["model_type"]
-assert encoder_type in ("modernbert", "t5gemma2"), f"Unsupported text encoder: {encoder_type}"
-if encoder_type == "t5gemma2":
-    eoi_id = int(text_config["eoi_token_index"])
+assert config["text_encoder_type"] == "pretrained" and text_config["model_type"] in ("modernbert", "t5gemma2")
+gemma = text_config["model_type"] == "t5gemma2"
+if gemma:
+    # T5Gemma 2's text encoder; the runtime drops its decoder and vision tower, which the checkpoint does not hold.
+    eoi_id = int(text_config["encoder"]["eoi_token_index"])
     text_config = text_config["encoder"]["text_config"]
-    assert text_config["hidden_activation"] == "gelu_pytorch_tanh"
-    assert text_config["attn_logit_softcapping"] is None and not text_config["attention_bias"]
-    assert text_config["rope_parameters"]["full_attention"]["rope_type"] == "linear"
-    assert text_config["rope_parameters"]["sliding_attention"]["rope_type"] == "default"
 assert config["pretrained_projector_type"] == "residual_mlp" and config["latent_patch_size"] == 1
 card = yaml.safe_load(open(os.path.join(model_dir, "README.md"), encoding="utf-8").read().split("---\n")[1])
 license_id = LICENSES[card["license"]]
@@ -134,27 +131,39 @@ w.add_float32(p + "norm_eps", float(config["norm_eps"]))
 # The RoPE base of the speaker encoder and the DiT, which both call precompute_freqs_cis() without one.
 w.add_float32(p + "rope_theta", float(inspect.signature(precompute_freqs_cis).parameters["theta"].default))
 
-w.add_string(p + "text.encoder", encoder_type)
+w.add_string(p + "text.backbone", "t5gemma2" if gemma else "modernbert")
 w.add_uint32(p + "text.hidden_size", int(text_config["hidden_size"]))
-w.add_uint32(p + "text.num_layers", int(text_config["num_hidden_layers"]))
 w.add_uint32(p + "text.num_heads", int(text_config["num_attention_heads"]))
+w.add_uint32(p + "text.num_layers", int(text_config["num_hidden_layers"]))
 add_array(p + "text.layer_global", [int(t == "full_attention") for t in text_config["layer_types"]], GGUFValueType.INT32)
 w.add_float32(p + "text.rope_theta_global", float(text_config["rope_parameters"]["full_attention"]["rope_theta"]))
 w.add_float32(p + "text.rope_theta_local", float(text_config["rope_parameters"]["sliding_attention"]["rope_theta"]))
-if encoder_type == "modernbert":
+if gemma:
+    assert text_config["hidden_activation"] == "gelu_pytorch_tanh" and not text_config["attention_bias"]
+    assert text_config["attn_logit_softcapping"] is None and text_config["final_logit_softcapping"] is None
+    assert text_config["rope_parameters"]["full_attention"]["rope_type"] == "linear"
+    assert text_config["rope_parameters"]["sliding_attention"]["rope_type"] == "default"
+    w.add_float32(p + "text.norm_eps", float(text_config["rms_norm_eps"]))
+    w.add_uint32(p + "text.num_kv_heads", int(text_config["num_key_value_heads"]))
+    w.add_uint32(p + "text.head_dim", int(text_config["head_dim"]))
+    # A full layer's RoPE divides the positions by this factor (transformers' "linear" RoPE).
+    w.add_float32(p + "text.rope_scale_global", float(text_config["rope_parameters"]["full_attention"]["factor"]))
+    # The attention scales its scores by query_pre_attn_scalar ** -0.5.
+    w.add_float32(p + "text.query_pre_attn_scalar", float(text_config["query_pre_attn_scalar"]))
+    # How far before and after itself a token attends in a sliding layer, as T5Gemma 2's
+    # sliding_window_mask_function(is_causal=False) lets it: a distance q - k below (window + 1) // 2 before, and
+    # k - q below window // 2 + 1 after.
+    inner = sliding_window_mask_function(int(text_config["sliding_window"]), is_causal=False)
+    span = range(-4 * int(text_config["sliding_window"]), 4 * int(text_config["sliding_window"]))
+    w.add_uint32(p + "text.window_before", max(q for q in span if inner(0, 0, q, 0)))
+    w.add_uint32(p + "text.window_after", max(k for k in span if inner(0, 0, 0, k)))
+    w.add_uint32(p + "text.eoi_id", eoi_id)
+else:
     assert text_config["hidden_activation"] == "gelu" and not text_config["norm_bias"]
     assert not text_config["attention_bias"] and not text_config["mlp_bias"]
     w.add_float32(p + "text.norm_eps", float(text_config["norm_eps"]))
+    # A local layer attends to the tokens at most local_attention / 2 away on either side.
     w.add_uint32(p + "text.window", int(text_config["local_attention"]) // 2)
-else:
-    w.add_float32(p + "text.norm_eps", float(text_config["rms_norm_eps"]))
-    w.add_uint32(p + "text.window", int(text_config["sliding_window"]))
-    w.add_uint32(p + "text.num_kv_heads", int(text_config["num_key_value_heads"]))
-    w.add_uint32(p + "text.head_dim", int(text_config["head_dim"]))
-    w.add_float32(p + "text.attention_scale", float(text_config["query_pre_attn_scalar"]) ** -0.5)
-    w.add_float32(p + "text.embedding_scale", float(text_config["hidden_size"]) ** 0.5)
-    w.add_float32(p + "text.rope_scale_global", 1.0 / float(text_config["rope_parameters"]["full_attention"]["factor"]))
-    w.add_uint32(p + "text.eoi_id", eoi_id)
 w.add_uint32(p + "text.dim", int(config["text_dim"]))
 w.add_uint32(p + "text.max_tokens", int(config["max_text_len"]))
 
@@ -209,9 +218,41 @@ w.add_uint32(p + "tail.window", int(defaults["tail_window_size"]))
 w.add_float32(p + "tail.std_threshold", float(defaults["tail_std_threshold"]))
 w.add_float32(p + "tail.mean_threshold", float(defaults["tail_mean_threshold"]))
 
-# The SentencePiece Unigram tokenizer, with its scores in float64 as tokenizer.json has them, since the
-# Viterbi path compares their sums.
-tokenizer_type = write_tokenizer(w, model_dir)
+# The SentencePiece tokenizer: ModernBERT-ja's Unigram model, with its scores in float64 as tokenizer.json has them,
+# since the Viterbi path compares their sums, or Gemma's BPE model, with its merges in the order of their rank, each as
+# the ids of its two pieces.
+tokenizer = json.load(open(os.path.join(model_dir, "tokenizer", "tokenizer.json"), encoding="utf-8"))
+model = tokenizer["model"]
+if model["type"] == "BPE":
+    assert model["byte_fallback"] and model["fuse_unk"] and not model["ignore_merges"] and model["dropout"] is None
+    assert model["continuing_subword_prefix"] is None and model["end_of_word_suffix"] is None
+    # The normalizer turns every space into "▁" before the pre-tokenizer splits at spaces, so the text is one word.
+    assert tokenizer["normalizer"] == {"type": "Replace", "pattern": {"String": " "}, "content": "▁"}
+    assert tokenizer["pre_tokenizer"] == {"type": "Split", "pattern": {"String": " "}, "behavior": "MergedWithPrevious", "invert": False}
+    tokens = [None] * len(model["vocab"])
+    for piece, i in model["vocab"].items():
+        tokens[i] = piece
+    vocab = model["vocab"]
+    merges = [merge.split(" ") if isinstance(merge, str) else merge for merge in model["merges"]]
+    assert all(a + b in vocab for a, b in merges)
+else:
+    assert model["type"] == "Unigram" and model["byte_fallback"] and tokenizer["normalizer"] is None
+    assert tokenizer["pre_tokenizer"] == {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "never", "split": False}
+    tokens = [piece for piece, _ in model["vocab"]]
+for added in tokenizer["added_tokens"]:
+    assert tokens[added["id"]] == added["content"] and not added["normalized"]
+    assert not (added["lstrip"] or added["rstrip"] or added["single_word"])
+tokenizer_config = json.load(open(os.path.join(model_dir, "tokenizer", "tokenizer_config.json"), encoding="utf-8"))
+w.add_string(p + "tokenizer.model", "bpe" if model["type"] == "BPE" else "unigram")
+add_array(p + "tokenizer.tokens", tokens, GGUFValueType.STRING)
+if model["type"] == "BPE":
+    add_array(p + "tokenizer.merges_left", [vocab[a] for a, _ in merges], GGUFValueType.INT32)
+    add_array(p + "tokenizer.merges_right", [vocab[b] for _, b in merges], GGUFValueType.INT32)
+else:
+    add_array(p + "tokenizer.scores", [float(score) for _, score in model["vocab"]], GGUFValueType.FLOAT64)
+add_array(p + "tokenizer.added_ids", [int(added["id"]) for added in tokenizer["added_tokens"]], GGUFValueType.INT32)
+w.add_uint32(p + "tokenizer.bos_id", tokens.index(tokenizer_config["bos_token"]))
+w.add_uint32(p + "tokenizer.unknown_id", tokens.index(model["unk_token"]) if model["type"] == "BPE" else int(model["unk_id"]))
 
 
 used = set()
@@ -232,12 +273,34 @@ def add(out_name, data):
         w.add_tensor(out_name, np.ascontiguousarray(data, dtype=np.float32))
 
 
-# ModernBERT-ja: the fused query, key and value projection is split, and so is the MLP's input projection
-# into the half that goes through GELU and the half that gates it.
 b = "pretrained_text_backbone.backbone."
-hidden = int(text_config["hidden_size"])
-inner = int(text_config["intermediate_size"])
-if encoder_type == "modernbert":
+if gemma:
+    def gemma_norm(key):
+        """A Gemma RMS norm's weight w, by which it multiplies as 1 + w; stored as 1 + w, the float32 sum it computes."""
+        return np.float32(1.0) + tensor(key)
+
+    add("text.embd", tensor(b + "embed_tokens.weight"))
+    add("text.embd_eoi", tensor(b + "embed_tokens.eoi_embedding"))
+    for i in range(int(text_config["num_hidden_layers"])):
+        a, o = f"{b}layers.{i}.", f"text.blk.{i}."
+        add(o + "attn_norm", gemma_norm(a + "pre_self_attn_layernorm.weight"))
+        for x in ("q", "k", "v"):
+            add(o + f"attn_{x}", tensor(a + f"self_attn.{x}_proj.weight"))
+        add(o + "attn_q_norm", gemma_norm(a + "self_attn.q_norm.weight"))
+        add(o + "attn_k_norm", gemma_norm(a + "self_attn.k_norm.weight"))
+        add(o + "attn_out", tensor(a + "self_attn.o_proj.weight"))
+        add(o + "attn_post_norm", gemma_norm(a + "post_self_attn_layernorm.weight"))
+        add(o + "ffn_norm", gemma_norm(a + "pre_feedforward_layernorm.weight"))
+        add(o + "ffn_gate", tensor(a + "mlp.gate_proj.weight"))
+        add(o + "ffn_up", tensor(a + "mlp.up_proj.weight"))
+        add(o + "ffn_down", tensor(a + "mlp.down_proj.weight"))
+        add(o + "ffn_post_norm", gemma_norm(a + "post_feedforward_layernorm.weight"))
+    add("text.final_norm", gemma_norm(b + "norm.weight"))
+else:
+    # ModernBERT-ja: the fused query, key and value projection is split, and so is the MLP's input projection
+    # into the half that goes through GELU and the half that gates it.
+    hidden = int(text_config["hidden_size"])
+    inner = int(text_config["intermediate_size"])
     add("text.embd", tensor(b + "embeddings.tok_embeddings.weight"))
     add("text.embd_norm", tensor(b + "embeddings.norm.weight"))
     for i in range(int(text_config["num_hidden_layers"])):
@@ -255,24 +318,9 @@ if encoder_type == "modernbert":
         add(o + "ffn_gate", wi[inner:])
         add(o + "ffn_down", tensor(a + "mlp.Wo.weight"))
     add("text.final_norm", tensor(b + "final_norm.weight"))
-else:
-    add("text.embd", tensor(b + "embed_tokens.weight"))
-    add("text.eoi_embd", tensor(b + "embed_tokens.eoi_embedding"))
-    add("text.final_norm", tensor(b + "norm.weight") + np.float32(1))
-    for i in range(int(text_config["num_hidden_layers"])):
-        a, o = f"{b}layers.{i}.", f"text.blk.{i}."
-        for source, target in (("pre_self_attn_layernorm", "attn_norm"), ("post_self_attn_layernorm", "attn_post_norm"),
-                               ("pre_feedforward_layernorm", "ffn_norm"), ("post_feedforward_layernorm", "ffn_post_norm")):
-            add(o + target, tensor(a + source + ".weight") + np.float32(1))
-        for source, target in (("q", "q"), ("k", "k"), ("v", "v"), ("o", "out")):
-            add(o + "attn_" + target, tensor(a + "self_attn." + source + "_proj.weight"))
-        for source in ("q", "k"):
-            add(o + source + "_norm", tensor(a + "self_attn." + source + "_norm.weight") + np.float32(1))
-        for source, target in (("gate", "act"), ("up", "gate"), ("down", "down")):
-            add(o + "ffn_" + target, tensor(a + "mlp." + source + "_proj.weight"))
 
 def projector(source, out):
-    """A PretrainedConditionProjector of ModernBERT's output: a linear map plus an RMS-normed residual MLP."""
+    """A PretrainedConditionProjector of the backbone's output: a linear map plus an RMS-normed residual MLP."""
     add(out + ".weight", tensor(source + "projector.weight"))
     add(out + ".bias", tensor(source + "projector.bias"))
     add(out + ".res_norm", tensor(source + "residual_norm.weight"))
@@ -363,7 +411,7 @@ add("dit.out_proj.bias", tensor("out_proj.bias"))
 unused = set(checkpoint.keys()) - used
 assert not unused, f"Checkpoint tensors are not mapped: {sorted(unused)}"
 if args.check_only:
-    print(f"Checked {len(used)} checkpoint tensors: {encoder_type}, {tokenizer_type}; no GGUF was written.")
+    print(f"Checked {len(used)} checkpoint tensors: {'t5gemma2' if gemma else 'modernbert'}, {model['type']}; no GGUF was written.")
     raise SystemExit(0)
 
 codec = DACVAE.load(os.path.join(args.codec_dir if args.codec_dir else snapshot(CODEC), "weights.pth")).eval()

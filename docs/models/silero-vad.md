@@ -60,8 +60,8 @@ sizes, give the regions of the whole audio on both devices.
 
 ## Speed
 
-A minute of audio on an Apple M5, after the model's load of 0.04 s: 0.033 s on the CPU and 0.057 s on Metal, a real-time
-factor of 0.0006 and 0.0010. The official package takes 0.150 s on the same CPU.
+A minute of audio on an Apple M5, after a load time of 0.04 s: 0.033 s on the CPU and 0.057 s on Metal, an RTFx (the
+seconds of audio over the seconds they took) of about 1800 and 1100. The official package takes 0.150 s on the same CPU.
 
 The same minute given a piece at a time, as audio arrives:
 

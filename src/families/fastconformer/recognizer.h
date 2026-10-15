@@ -114,6 +114,12 @@ private:
      * its threads for every graph: on an Apple M5 with reazonspeech-nemo-v2 in Q8_0 on Metal, recognitions of 6, 26 and
      * 28 s by beam search took 89, 357 and 410 ms with 4 such threads, 109, 420 and 422 ms with 4 threads started for
      * each graph, 116, 451 and 504 ms with 1 thread, and 119, 446 and 526 ms decoding on Metal (2026-10-13, medians).
+     * They keep ggml's default of spinning a while before they sleep, which held up best while other processes kept the
+     * cores busy: with 4 and 8 such processes on the M5's 10 cores, 8 recognitions took 1,867 and 2,604 ms with these
+     * threads, 1,967 and 4,280 ms with threads that sleep at once, and 2,392 and 3,167 ms with threads started for each
+     * graph (2026-10-13, sums of medians). A model on the CPU computes without such threads: there they gained 2 to
+     * 3% on a quiet M5 but lost 62% with reazonspeech-nemo-v2 and 73% with parakeet-tdt_ctc-0.6b-ja, both in Q8_0 with
+     * 4 threads, while 8 processes kept the cores busy (2026-10-13).
      */
     struct OnCpu {
         OnCpu(const ModelFile & device, int threads, const std::vector<std::string> & names);

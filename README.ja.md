@@ -27,7 +27,7 @@
 
 speech.cpp は、1つのコマンド `speech` と1つの共有ライブラリ `libspeech` からなり、どちらも1つの C API の上に作られています。[ggml](https://github.com/ggml-org/ggml) を通して CPU、Metal、Vulkan で動きます。このコマンドは、テキストを読み上げ、録音を文字に起こし、録音の中で人が話している区間を見つけ、マイクの音声を話している間に文字に起こします(`speech asr --live`)。また、OpenAI の音声 API と Realtime の文字起こしを HTTP で提供し、リクエストの間もモデルを読み込んだままにしておきたいプログラムのためにワーカープロセスを動かします。[ASIST](https://github.com/nyosegawa/asist) もこのワーカーを使っています。
 
-**最初の音声が 0.25 秒以内に届きます。** Apple M5 では、Qwen3-TTS 0.6B はテキストを受け取ってから 0.04 秒で、Irodori-TTS は 0.25 秒で最初の音声を送り、残りは再生している間に続けて届きます。
+**最初の音声までの時間は 0.25 秒以内です。** Apple M5 では、Qwen3-TTS 0.6B はテキストを受け取ってから 0.035 秒で、Irodori-TTS v4.1-Small-MF は 0.22 秒で最初の音声を送り、残りは再生している間に続けて届きます。
 
 **実行ファイルが1つあれば、ほかに何もインストールする必要はありません。** Python も CUDA も使いません。`speech` はモデルを名前で取得し(コーデックを含めて1つの GGUF ファイルです)、Metal、Vulkan、CPU のいずれかで動かします。
 
@@ -53,7 +53,7 @@ speech.cpp は、1つのコマンド `speech` と1つの共有ライブラリ `l
 | タスク | 名前 | 言語 | 得意なこと |
 |---|---|---|---|
 | 合成 | [`qwen3-tts-0.6b`](https://huggingface.co/sakasegawa/Qwen3-TTS-12Hz-0.6B-CustomVoice-GGUF), [`qwen3-tts-1.7b`](https://huggingface.co/sakasegawa/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF) | de en es fr it ja ko pt ru zh | 名前のある9人の話者を持ち、0.08 秒の最初のフレームから音声をストリーミングします。1.7B モデルは話し方の指示に従います |
-| 合成 | [`irodori-tts-mf`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF), [`irodori-tts`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-GGUF) | ja | 参照録音の声や、言葉で説明した声で日本語を話します |
+| 合成 | [`irodori-tts-mf`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF), [`irodori-tts`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-GGUF), [`irodori-tts-large`](https://huggingface.co/sakasegawa/Irodori-TTS-v4-Large-GGUF) | ja | 参照録音の声や、言葉で説明した声で日本語を話します。large はどちらにもより忠実です |
 | 認識 | [`qwen3-asr-0.6b`](https://huggingface.co/sakasegawa/Qwen3-ASR-0.6B-GGUF), [`qwen3-asr-1.7b`](https://huggingface.co/sakasegawa/Qwen3-ASR-1.7B-GGUF) | 30 言語 | 言語を自分で判定し、人名や用語のプロンプトを受け付け、20 分までの音声を一度に認識します |
 | 認識 | [`reazonspeech-v2`](https://huggingface.co/sakasegawa/reazonspeech-nemo-v2-GGUF) | ja | 何分もある録音の日本語を、句読点つきで認識します |
 | 認識 | [`parakeet-tdt_ctc-0.6b-ja`](https://huggingface.co/sakasegawa/parakeet-tdt_ctc-0.6b-ja-GGUF) | ja | 短い日本語の発話を速く認識し、時刻も出します |
@@ -76,7 +76,7 @@ x64 の Windows では、PowerShell で次のコマンドを実行します。
 irm https://raw.githubusercontent.com/nyosegawa/speech.cpp/main/install.ps1 | iex
 ```
 
-インストーラはリリースのアーカイブを SHA-256 で確かめ、`speech` をホームフォルダの下に置き、`PATH` に加えます。もう一度実行すると更新されます。Linux では、Vulkan のローダーが入っていれば Vulkan 版を、入っていなければ CPU 版をインストールします。Linux 版には glibc 2.34 以降が必要です。オプション、アンインストールの方法、各プラットフォームで必要なものは [docs/install.md](docs/install.md) にあります。Intel Mac やその他のシステムでは、[ソースからビルド](docs/install.md#build-from-source)してください。
+インストーラはリリースのアーカイブを SHA-256 で確かめ、`speech` をホームフォルダの下に置き、`PATH` に加えます。`speech update` を実行するか、インストーラをもう一度実行すると更新されます。Linux では、Vulkan のローダーが入っていれば Vulkan 版を、入っていなければ CPU 版をインストールします。Linux 版には glibc 2.34 以降が必要です。オプション、アンインストールの方法、各プラットフォームで必要なものは [docs/install.md](docs/install.md) にあります。Intel Mac やその他のシステムでは、[ソースからビルド](docs/install.md#build-from-source)してください。
 
 ## クイックスタート
 
@@ -116,6 +116,7 @@ irm https://raw.githubusercontent.com/nyosegawa/speech.cpp/main/install.ps1 | ie
 | `speech devices` | モデルを動かせるデバイスを一覧にします |
 | `speech models`, `pull`, `rm` | モデルの一覧表示、取得、削除をします |
 | `speech quantize` | F32 の重みのモデルファイルを F16、Q8_0、またはより小さい型で書き出します |
+| `speech update` | 最新のリリースをインストールするか、新しいリリースが出ているかどうかを表示します |
 | `speech serve` | OpenAI の音声 API と、モデルを試すページを HTTP で提供します |
 | `speech worker` | プログラムのために、標準入力と標準出力の JSON Lines でモデルを提供します |
 
@@ -165,24 +166,25 @@ speech_synthesize(request, on_audio, NULL);   /* on_audio receives the samples a
 
 移植したすべての段階を、公式の実装から書き出したテンソルと比べています。認識モデルは、確認に使うすべての入力について、F32 でも F16 でも公式の実装と同じテキストを出します。
 
-[speech-bench](https://github.com/nyosegawa/speech-bench) を使い、2026-10-08 に Apple M5(Metal)と RTX 2080(Vulkan)で、リクエストを1つずつ処理して測りました。合成は日本語の 20 文について、最初の音声までの時間、リアルタイム係数、そして合成した音声を Qwen3-ASR 1.7B が聞き取ったときの CER を測りました。
+[speech-bench](https://github.com/nyosegawa/speech-bench) を使い、2026-10-14 に Apple M5(Metal)と RTX 2080(Vulkan)で、リクエストを1つずつ処理して測りました。合成は日本語の 20 文をシード 1 と 2 で 3 回ずつ読み上げ(Irodori-TTS は1つの参照音声の声で読み上げます)、最初の音声までの時間の p50、RTFx(音声の秒数をかかった秒数で割った値で、大きいほど速い)、そして合成した音声を Qwen3-ASR 1.7B が聞き取ったときの CER を測りました。
 
-| モデル | 最初の音声、M5 / RTX 2080 | リアルタイム係数 | CER |
+| モデル | 最初の音声までの時間、M5 / RTX 2080 | RTFx | CER |
 |---|---|---|---|
-| `qwen3-tts-0.6b`, Q8_0 | 0.04 s / 0.03 s | 0.31 / 0.27 | 5.8% / 8.0% |
-| `qwen3-tts-1.7b`, Q8_0 | 0.06 s / 0.04 s | 0.42 / 0.32 | 3.0% / 2.8% |
-| `irodori-tts-mf`, F16 | 0.25 s / 0.12 s | 0.17 / 0.07 | 6.1% / 7.1% |
-| `irodori-tts`, F16, 16 steps | 1.24 s / 0.52 s | 0.34 / 0.13 | 3.2% / 3.2% |
+| `qwen3-tts-0.6b`, Q8_0 | 0.035 s / 0.024 s | 3.7 / 5.2 | 6.4% / 6.0% |
+| `qwen3-tts-1.7b`, Q8_0 | 0.057 s / 0.032 s | 2.6 / 4.2 | 4.2% / 6.1% |
+| `irodori-tts-mf`, F16 | 0.22 s / 0.12 s | 7.7 / 18 | 6.7% / 6.4% |
+| `irodori-tts`, F16, 16 steps | 1.15 s / 0.52 s | 3.5 / 8.5 | 3.2% / 3.2% |
+| `irodori-tts-large`, Q8_0, 16 steps | 4.44 s / 1.25 s | 0.98 / 3.3 | 5.5% / 5.5% |
 
-認識は、Common Voice 8.0 の日本語テストセットの 4,483 発話(声の部分だけに切り詰めたもの)で測りました。括弧内は、同じ語の別の表記を正解と認めたときの CER です。parakeet-tdt-0.6b-v3 は FLEURS の英語 300 発話で測りました。FastConformer の時間は 2026-10-12 に speech-bench で、リクエストを1つずつ送り、日本語の最初の 100 発話(VAD で残った 99 発話)と英語の 300 発話(残った 299 発話)で測りました。精度と時間では使ったサンプルの数が異なります。
+認識は、Common Voice 8.0 の日本語テストセットの 4,483 発話(声の部分だけに切り詰めたもの)で測りました。括弧内は、同じ語の別の表記を正解と認めたときの CER で、CER は2台で同じでした。レイテンシの p50 も同じ発話で測りました。parakeet-tdt-0.6b-v3 は FLEURS の英語 300 発話で、3 回測りました。
 
-| モデル | Common Voice ja の CER | 時間の中央値、M5 / RTX 2080 |
+| モデル | Common Voice ja の CER | レイテンシの p50、M5 / RTX 2080 |
 |---|---|---|
-| `parakeet-tdt_ctc-0.6b-ja`, Q8_0 | 7.9% (3.0%) | 0.05 s / 0.04 s |
-| `reazonspeech-v2`, Q8_0 | 12.1% (7.2%) | 0.08 s / 0.11 s |
-| `qwen3-asr-0.6b`, Q8_0 | 11.9% (7.0%) | 0.13 s / 0.09 s |
-| `qwen3-asr-1.7b`, Q8_0 | 9.5% (4.7%) | 0.31 s / 0.16 s |
-| `parakeet-tdt-0.6b-v3`, F16 | FLEURS en の WER 8.8% | 0.09 s / 0.10 s |
+| `parakeet-tdt_ctc-0.6b-ja`, Q8_0 | 7.9% (3.0%) | 0.045 s / 0.050 s |
+| `reazonspeech-v2`, Q8_0 | 12.0% (7.1%) | 0.063 s / 0.092 s |
+| `qwen3-asr-0.6b`, Q8_0 | 11.9% (7.0%) | 0.127 s / 0.073 s |
+| `qwen3-asr-1.7b`, Q8_0 | 9.5% (4.7%) | 0.312 s / 0.140 s |
+| `parakeet-tdt-0.6b-v3`, F16 | FLEURS en の WER 8.8% | 0.077 s / 0.095 s |
 
 詳しくは各モデルのページを見てください。
 
@@ -206,6 +208,7 @@ MIT ライセンスです。[LICENSE](LICENSE) を見てください。モデル
 
 - Qwen3-TTS と Qwen3-ASR は Qwen チームのもので、Apache License 2.0 で提供されています。
 - Irodori-TTS v4.1-Small と v4.1-Small-MF は Aratako 氏のもので、MIT License に加えて、モデルカードにある倫理上の制限がかかります。同意のない声のクローン、ディープフェイク、誤情報への利用は禁じられています。
+- Irodori-TTS v4-Large は Aratako 氏のもので、テキストエンコーダーが Google の T5Gemma 2 から派生しているため、Gemma Terms of Use で提供されています。倫理上の制限は v4.1 と同じです。
 - Irodori-TTS のファイルに含まれるコーデック Semantic-DACVAE-Japanese-32dim は Aratako 氏のもので、MIT License で提供されています。これは Meta の facebook/dacvae-watermarked(Apache License 2.0)から派生しています。そのモデルカードの本文は SAM License にも触れていますが、facebookresearch/dacvae で 2025-12-19 に Apache-2.0 に訂正されました。
 - parakeet のモデルは NVIDIA のもので CC-BY-4.0、reazonspeech-nemo-v2 は reazon-research のもので Apache License 2.0 で提供されています。
 - Silero VAD は Silero Team のもので、MIT License で提供されています。

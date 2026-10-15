@@ -27,7 +27,7 @@ synthesis returns non-finite audio as a success.
 
 ## Streaming
 
-- **First audio:** measure the time to the first chunk. A small first chunk or window brings it forward.
+- **Time to first audio:** measure the time to the first chunk. A small first chunk or window brings it forward.
 - **No gaps:** a chunk must arrive before the listener has played the previous one. Measure the arrival time of every
   chunk against the audio sent, on an Apple M5, an RTX 2080 and a slower machine (an M2), and record the smallest
   margin.

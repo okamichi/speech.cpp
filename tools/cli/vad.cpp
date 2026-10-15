@@ -18,7 +18,8 @@
 
 // speech vad: finds where someone speaks in WAVE files and writes each file's regions to stdout in the order the files
 // are given, as text or as one JSON object per file, and with --split each region as a WAVE file of its own, and
-// reports on stderr the load and, for each file, its seconds of audio, the time to its regions and the real-time factor.
+// reports on stderr the load time and, for each file, its seconds of audio, the time to its regions and the RTFx, the
+// seconds of audio over the seconds they took.
 
 namespace {
 
@@ -78,7 +79,7 @@ int run_vad(const CommandLine & line, FILE * out) {
     const Model model = load_model(path, loading);
     const ModelInfo info = model_info(model.get());
     const speech_model_info * m = info.get();
-    std::fprintf(stderr, "load %.2f s: %s on %s\n", seconds_since(t0), speech_model_info_name(m), speech_model_info_device(m));
+    std::fprintf(stderr, "load time %.2f s: %s on %s\n", seconds_since(t0), speech_model_info_name(m), speech_model_info_device(m));
     if (line.has("-v")) std::fprintf(stderr, "speech.cpp %s, %d Hz\n", speech_version(), speech_model_info_sample_rate(m));
     const std::optional<std::string> split = line.value("--split");
     if (split) {
@@ -142,12 +143,12 @@ int run_vad(const CommandLine & line, FILE * out) {
         }
         if (format == "json") std::fprintf(out, "%s]}\n", json.c_str());
         std::fflush(out);
-        std::fprintf(stderr, "%s: %.2f s of audio in %.3f s, RTF %.4f, %zu region%s\n", path.c_str(), audio, took, took / audio, n, n == 1 ? "" : "s");
+        std::fprintf(stderr, "%s: %.2f s of audio in %.3f s, RTFx %.0f, %zu region%s\n", path.c_str(), audio, took, audio / took, n, n == 1 ? "" : "s");
         audio_total += audio;
         busy += took;
     }
     if (line.args.size() > 2) {
-        std::fprintf(stderr, "%zu files, %.2f s of audio in %.3f s, RTF %.4f\n", line.args.size() - 1, audio_total, busy, busy / audio_total);
+        std::fprintf(stderr, "%zu files, %.2f s of audio in %.3f s, RTFx %.0f\n", line.args.size() - 1, audio_total, busy, audio_total / busy);
     }
     return 0;
 }
@@ -180,5 +181,6 @@ Command vad_command() {
     c.min_args = 2;
     c.max_args = SIZE_MAX;
     c.run = run_vad;
+    c.release_notice = ReleaseNotice::AtEnd;
     return c;
 }

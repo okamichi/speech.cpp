@@ -270,6 +270,11 @@ const std::vector<float> & Qwen3Decoder::hidden() const {
     return hidden_;
 }
 
+int32_t Qwen3Decoder::pick() const {
+    if (readback_ != Qwen3Readback::Pick) throw std::logic_error("the decoder " + tensors_ + " reads logits, not picks");
+    return pick_;
+}
+
 void Qwen3Decoder::read_cache(int layer, std::vector<float> & keys, std::vector<float> & values) const {
     const int64_t kv_dim = (int64_t) shape_.n_kv_head * shape_.head_dim, capacity = cache_->capacity;
     const auto as_floats = [&](const ggml_tensor * t, int64_t count) {
@@ -419,7 +424,12 @@ Qwen3Decoder::Outputs Qwen3Decoder::outputs(Graph & g, ggml_tensor * last, ggml_
     ggml_tensor * hidden = ggml_mul(ctx, ggml_rms_norm(ctx, last, shape_.rms_eps), m_.tensor(tensors_ + ".norm"));
     Outputs out;
     out.logits = ggml_mul_mat(ctx, head, hidden);
-    g.output(out.logits);
+    if (readback_ == Qwen3Readback::Pick) {
+        out.pick = ggml_argmax(ctx, out.logits);
+        g.output(out.pick);
+    } else {
+        g.output(out.logits);
+    }
     if (readback_ == Qwen3Readback::LogitsAndHidden) {
         out.hidden = hidden;
         g.output(hidden);
@@ -429,7 +439,8 @@ Qwen3Decoder::Outputs Qwen3Decoder::outputs(Graph & g, ggml_tensor * last, ggml_
 
 void Qwen3Decoder::read(const Outputs & outputs) {
     if (outputs.hidden) Graph::read(outputs.hidden, hidden_);
-    Graph::read(outputs.logits, logits_);
+    if (outputs.pick) ggml_backend_tensor_get(outputs.pick, &pick_, 0, sizeof(pick_));
+    else Graph::read(outputs.logits, logits_);
 }
 
 void Qwen3Decoder::run(int64_t n, const Qwen3Rows & rows, ggml_tensor * head) {
@@ -476,6 +487,33 @@ void Qwen3Decoder::step(int32_t id, ggml_tensor * table, ggml_tensor * head) {
     }
     read(s->outputs);
     n_past_ += 1;
+}
+
+std::vector<int32_t> Qwen3Decoder::verify(const std::vector<int32_t> & ids, ggml_tensor * table, ggml_tensor * head,
+                                          std::vector<float> * logits) {
+    const int64_t n = (int64_t) ids.size();
+    make_room(n);
+    Graph g(kGraphSize);
+    ggml_context * ctx = g.ctx();
+    const RunInputs inputs = run_inputs(g, n);
+    ggml_tensor * x = layers(g, ggml_get_rows(ctx, table, g.input(ids, n)), n, true, inputs);
+    ggml_tensor * all = ggml_mul_mat(ctx, head, ggml_mul(ctx, ggml_rms_norm(ctx, x, shape_.rms_eps), m_.tensor(tensors_ + ".norm")));
+    ggml_tensor * picks = ggml_argmax(ctx, all);
+    g.output(picks);
+    if (logits) g.output(all);
+    g.compute(backend_, allocr_);
+    std::vector<int32_t> out((size_t) n);
+    ggml_backend_tensor_get(picks, out.data(), 0, out.size() * sizeof(int32_t));
+    if (logits) Graph::read(all, *logits);
+    n_past_ += n;
+    return out;
+}
+
+void Qwen3Decoder::rewind(int64_t n_past) {
+    if (n_past < 0 || n_past > n_past_) {
+        throw std::logic_error("a decoder of " + std::to_string(n_past_) + " positions was rewound to " + std::to_string(n_past));
+    }
+    n_past_ = n_past;
 }
 
 void Qwen3Decoder::build_chain(Qwen3Chain & chain, KeptChain & kept) {

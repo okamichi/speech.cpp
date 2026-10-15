@@ -3,8 +3,6 @@ the script ends, however it ends, so that a failed check leaves no server behind
 WebSocket (RFC 6455), with the standard library alone.
 """
 
-import array
-import ast
 import atexit
 import base64
 import hashlib
@@ -18,18 +16,6 @@ import subprocess
 import threading
 import time
 import uuid
-
-
-def read_npy(path):
-    """The float32 samples of a dump's .npy file."""
-    with open(path, "rb") as f:
-        data = f.read()
-    header_length = struct.unpack("<H", data[8:10])[0]
-    header = ast.literal_eval(data[10:10 + header_length].decode())
-    values = array.array("f")
-    values.frombytes(data[10 + header_length:])
-    assert header["descr"] == "<f4"
-    return values
 
 
 def free_port():

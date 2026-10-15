@@ -36,7 +36,6 @@ usage: python3 checks/smoke/speech_cli_smoke.py <speech> <work dir> <model.gguf>
 """
 
 import array
-import ast
 import base64
 import json
 import math
@@ -49,7 +48,7 @@ import sys
 import threading
 import time
 
-from worker_client import MOST_CER, PARAGRAPH, Worker, cer, dump_requests, heard, joined_transcript, short, speaks_by_sentence
+from worker_client import MOST_CER, PARAGRAPH, Worker, cer, dump_requests, heard, joined_transcript, read_npy, short, speaks_by_sentence
 
 args = sys.argv[1:]
 options = args[args.index("--") + 1:] if "--" in args else []
@@ -77,7 +76,7 @@ if "--asr" in args:
 speech, work, model, *dumps = args
 os.makedirs(work, exist_ok=True)
 added = [o.split("=", 1)[0] for i, o in enumerate(options) if i > 0 and options[i - 1] == "--add-voice"]
-SUBCOMMANDS = ["tts", "asr", "vad", "voice", "info", "devices", "models", "pull", "rm", "quantize", "serve", "worker"]
+SUBCOMMANDS = ["tts", "asr", "vad", "voice", "info", "devices", "models", "pull", "rm", "quantize", "update", "serve", "worker"]
 
 
 def run(*command, input=None, stdout=subprocess.PIPE, code=0):
@@ -322,16 +321,6 @@ if info["task"] == "synthesis":
         os.remove(made)
         print("speech voice refused two embeddings (exit 2), an embedding with a recording and three forged headers (exit 1)")
 else:
-    def read_npy(path):
-        with open(path, "rb") as f:
-            data = f.read()
-        header_length = struct.unpack("<H", data[8:10])[0]
-        header = ast.literal_eval(data[10:10 + header_length].decode())
-        values = array.array("f")
-        values.frombytes(data[10 + header_length:])
-        assert header["descr"] == "<f4"
-        return values
-
     rate = info["sample_rate"]
 
 if info["task"] == "detection":
@@ -439,7 +428,7 @@ elif info["task"] == "recognition":
         return w.terminal(id, "end")
 
     ends = [worker_end(str(i), pcm, **timed) for i, pcm in enumerate(pcms)]
-    requests = [dump_requests(speech, model, d) for d in dumps]
+    requests = [dump_requests(speech, model, d, options) for d in dumps]
     # The worker's languages of each dump are the ones qwen-asr parsed, and the member is left out where there are none.
     assert [e.get("languages", []) for e in ends] == [r[0][3] for r in requests] and all(e.get("languages") != [] for e in ends), ends
     # The last request of each dump: its language forced and its prompt, or its decoding other than the default, where it

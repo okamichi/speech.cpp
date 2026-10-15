@@ -19,6 +19,7 @@
 #include "qwen3-asr/encoder.h"
 #include "qwen3-asr/layout.h"
 #include "reference-dumps.h"
+#include "weight-types.h"
 
 using namespace qwen3_asr;
 
@@ -29,6 +30,10 @@ int main(int argc, char ** argv) {
         return 2;
     }
     try {
+        if (!takes_weights(args[1], layout, {"F32", "F16", "Q8_0"},
+                           "its thresholds are those measured with them")) {
+            return 2;
+        }
         ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
         std::printf("backend: %s\n", ggml_backend_name(backend));
         bool ok = true;

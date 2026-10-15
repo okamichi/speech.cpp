@@ -16,8 +16,8 @@ and v4.1-Small (16 steps) in F16 on the speech-bench sentences, the two builds a
 |---|---|---|
 | Worst step over the RF dumps, least and median | 31.2 and 48.6 dB | 36.6 and 49.6 dB |
 | rf-hai-speaker-kv-min1's worst step and sampled latent | 31.2 and 39.0 dB | 48.3 and 61.8 dB |
-| The 20 sentences of 2 to 19 s, RTF, MF / RF | 0.1915 / 0.4057 | 0.1901 / 0.3948 |
-| First audio of the three sentences of 16 to 19 s, MF / RF | 0.59 to 0.68 / 3.9 to 4.6 s | 0.56 to 0.63 / 3.6 to 4.3 s |
+| The 20 sentences of 2 to 19 s, RTFx, MF / RF | 5.22 / 2.46 | 5.26 / 2.53 |
+| Time to first audio of the three sentences of 16 to 19 s, MF / RF | 0.59 to 0.68 / 3.9 to 4.6 s | 0.56 to 0.63 / 3.6 to 4.3 s |
 | 0.8 to 1.2 s of speech at a fixed length, total, MF / RF | 227 to 285 / 519 to 592 ms | 227 to 284 / 549 to 605 ms |
 
 Qwen3-ASR 1.7B hears the same text in 58 of 60 of each model's audios on Metal (20 sentences, seeds 1 to 3), with a
@@ -30,7 +30,7 @@ Measured on an RTX 2080 with driver 591.86 on Vulkan, F16 files, the speech-benc
 | mf-weather's worst step and sampled latent | 60.5 and 53.0 dB | 56.3 and 48.8 dB |
 | rf-weather's worst step and sampled latent | 46.0 and 58.6 dB | 42.4 and 55.5 dB |
 | rf-hai-speaker-kv-min1's worst step and sampled latent | 31.3 and 39.0 dB | 31.3 and 39.0 dB |
-| The 20 sentences, RTF, MF / RF | 0.0720 / 0.1396 | 0.0718 / 0.1394 |
+| The 20 sentences, RTFx, MF / RF | 13.9 / 7.16 | 13.9 / 7.17 |
 
 On the M5's CPU, MF in F32, the DiT sampled 27, 145 and 685 frames in 0.77, 3.36 and 14.9 s with the products and
 0.82, 3.30 and 15.2 s with flash attention, and its error against the official was neither smaller nor larger.

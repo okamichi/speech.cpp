@@ -247,9 +247,9 @@ it concerns (an option's name, `text`, `audio`, `device`, `threads`, `name`, `pa
   other and for the pushes of its detections. A request is used by one thread at a time, but `speech_request_cancel()`
   may be called from any thread; a detection is used by one thread at a time. Information never changes once made and
   may be read from any thread. Separate models are independent.
-- **Versions.** `speech_version()` gives the release the library was built from (`"0.8.4"`). `SPEECH_API_VERSION_MAJOR`
+- **Versions.** `speech_version()` gives the release the library was built from (`"0.8.7"`). `SPEECH_API_VERSION_MAJOR`
   and `SPEECH_API_VERSION_MINOR`, and `speech_api_version_major()` and `speech_api_version_minor()` for a caller that
-  loads the library at run time, give the API's version, 4.0. The major rises when a declaration changes in a way an
+  loads the library at run time, give the API's version, 4.1. The major rises when a declaration changes in a way an
   existing caller notices, and the minor when a function, an option or an enum value is added. A program built against
   M.m runs against a library of the same major version and a minor version of m or more. The shared library's SOVERSION
   is the major version (`libspeech.4.dylib`, `libspeech.so.4`).
@@ -270,6 +270,7 @@ Each model takes some of them, with ranges and defaults from its file, and `spee
 | `max_seconds` | float | none | Qwen3-TTS |
 | `timestamps` | bool | false | [FastConformer](models/fastconformer.md#options) |
 | `prompt` | string | `""` | [Qwen3-ASR](models/qwen3-asr.md#options) |
+| `draft` | string | `""` | [Qwen3-ASR](models/qwen3-asr.md#options) |
 | `decoding` | string | none | reazonspeech-nemo-v2 |
 | `decode_on_cpu` | bool | none | FastConformer |
 | `do_sample`, `top_k`, `top_p`, `temperature`, `repetition_penalty` | bool, int, float, float, float | none | Qwen3-TTS |

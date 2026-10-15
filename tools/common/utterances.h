@@ -72,10 +72,12 @@ public:
      * Recognizes `samples` at `rate` as `asked`, in the place `reservation` took, or returns nothing once `cancellation`
      * stops it, and throws what it refuses. The samples are its own, to let go once the library's request has copied
      * them. `utterance` is the utterance's number, and `provisional` says whether the samples are its beginning, read
-     * while it goes on, or all of it.
+     * while it goes on, or all of it. `draft` is the text the utterance's last reading gave, or "", which a model that
+     * takes the option draft checks as the text it is likely to write.
      */
     virtual std::optional<Transcript> transcribe(Reservation & reservation, const Asked & asked, std::vector<float> samples, int rate,
-                                                 Cancellation & cancellation, uint64_t utterance, bool provisional) = 0;
+                                                 Cancellation & cancellation, uint64_t utterance, bool provisional,
+                                                 const std::string & draft) = 0;
 };
 
 /**
@@ -194,6 +196,8 @@ private:
         uint64_t number = 0;
         /** What its deltas gave while it was said, which the rest of its final text follows as one more delta. */
         std::string sent;
+        /** The text of its last reading, which its recognition checks as a draft. */
+        std::string draft;
         std::vector<float> samples;
         /** The samples' count, which counts toward held() until the recognition has ended. */
         size_t length = 0;

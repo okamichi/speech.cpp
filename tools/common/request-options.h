@@ -53,6 +53,12 @@ OptionValue option_from_json(speech_option option, const JsonValue & value);
 /** Sets each option on `request` through the setter of its type, in order; the library's refusal throws a Failure. */
 void apply_options(speech_request * request, const std::vector<RequestOption> & options);
 
+/**
+ * Sets `draft` as the option draft of `request`, a request on `model`, where the draft is not empty and the model takes
+ * the option; a model that does not take it would refuse the request.
+ */
+void apply_draft(speech_request * request, const speech_model * model, const std::string & draft);
+
 /** Options as a command line writes them, for a log: "--steps 8 --keep-tail=true". */
 std::string options_text(const std::vector<RequestOption> & options);
 

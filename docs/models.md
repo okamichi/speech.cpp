@@ -14,6 +14,7 @@ first time.
 | [`qwen3-tts-1.7b`](https://huggingface.co/sakasegawa/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF) | synthesis | the same | `Qwen3-TTS-12Hz-1.7B-CustomVoice-Q8_0.gguf`, 2.29 GB | [Qwen3-TTS](models/qwen3-tts.md) |
 | [`irodori-tts-mf`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF) | synthesis | ja | `Irodori-TTS-866M-MF-v4.1-F16.gguf`, 1.92 GB | [Irodori-TTS](models/irodori-tts.md) |
 | [`irodori-tts`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-GGUF) | synthesis | ja | `Irodori-TTS-859M-v4.1-F16.gguf`, 1.91 GB | [Irodori-TTS](models/irodori-tts.md) |
+| [`irodori-tts-large`](https://huggingface.co/sakasegawa/Irodori-TTS-v4-Large-GGUF) | synthesis | ja | `Irodori-TTS-3.4B-v4-Q8_0.gguf`, 3.88 GB | [Irodori-TTS](models/irodori-tts.md) |
 | [`qwen3-asr-0.6b`](https://huggingface.co/sakasegawa/Qwen3-ASR-0.6B-GGUF) | recognition | 30 languages | `Qwen3-ASR-0.6B-Q8_0.gguf`, 0.84 GB | [Qwen3-ASR](models/qwen3-asr.md) |
 | [`qwen3-asr-1.7b`](https://huggingface.co/sakasegawa/Qwen3-ASR-1.7B-GGUF) | recognition | 30 languages | `Qwen3-ASR-1.7B-Q8_0.gguf`, 2.18 GB | [Qwen3-ASR](models/qwen3-asr.md) |
 | [`reazonspeech-v2`](https://huggingface.co/sakasegawa/reazonspeech-nemo-v2-GGUF) | recognition | ja | `reazonspeech-nemo-619M-v2-Q8_0.gguf`, 0.66 GB | [FastConformer](models/fastconformer.md) |

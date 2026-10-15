@@ -21,9 +21,11 @@
 #include "args.h"
 #include "backend.h"
 #include "reference-dumps.h"
+#include "fastconformer/layout.h"
 #include "fastconformer/recognizer.h"
 #include "fastconformer/times.h"
 #include "npy.h"
+#include "weight-types.h"
 
 using namespace fastconformer;
 
@@ -231,6 +233,10 @@ int main(int argc, char ** argv) {
         return 2;
     }
     try {
+        if (!takes_weights(args[1], layout, {"F32", "F16"},
+                           "it wants NeMo's tokens and their frames, which half precision moves by a frame at most")) {
+            return 2;
+        }
         ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
         std::printf("backend: %s\n", ggml_backend_name(backend));
         bool ok = true;

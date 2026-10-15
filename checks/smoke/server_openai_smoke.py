@@ -19,7 +19,6 @@ usage: uv run --script checks/smoke/server_openai_smoke.py <speech> <recognition
 """
 
 import array
-import ast
 import base64
 import io
 import json
@@ -36,7 +35,7 @@ from openai import OpenAI
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from server_client import Server  # noqa: E402
-from worker_client import joined_transcript  # noqa: E402
+from worker_client import joined_transcript, read_npy  # noqa: E402
 
 if len(sys.argv) != 5:
     raise SystemExit("usage:" + __doc__.split("usage:")[1].rstrip())
@@ -47,16 +46,6 @@ client = OpenAI(base_url=f"http://127.0.0.1:{server.port}/v1", api_key="unused")
 listed = [m.id for m in client.models.list()]
 name = listed[0]
 print(f"openai {openai.__version__}: models.list() gives {listed}")
-
-
-def read_npy(path):
-    with open(path, "rb") as f:
-        data = f.read()
-    header_length = struct.unpack("<H", data[8:10])[0]
-    assert ast.literal_eval(data[10:10 + header_length].decode())["descr"] == "<f4"
-    values = array.array("f")
-    values.frombytes(data[10 + header_length:])
-    return values
 
 
 def wav(pcm, rate):

@@ -58,8 +58,16 @@ curl -fsSL https://raw.githubusercontent.com/nyosegawa/speech.cpp/main/install.s
 
 ## Update
 
-Run the installer again. It installs the latest release and removes the version it replaces. On Linux it also switches
-between the CPU and the Vulkan build when the Vulkan loader has been installed or removed.
+```sh
+speech update
+```
+
+`speech update` runs the installer when a later release is out, and `speech update --check` only says whether one is.
+Running the installer again does the same: it installs the latest release and removes the version it replaces. On Linux
+it also switches between the CPU and the Vulkan build when the Vulkan loader has been installed or removed.
+
+On a terminal, `speech` says once a day when a later release is out ([cli.md](cli.md#rules-for-every-subcommand));
+`SPEECH_NO_UPDATE_CHECK=1` turns that off.
 
 ## Uninstall
 

@@ -33,7 +33,8 @@
 // whose request speaks only a short time speaks a text a sentence at a time (sentences.h). In a regular file that the
 // WAVE starts at the beginning of, its RIFF and data sizes are set once the audio is complete; anywhere else (a pipe, a
 // console, a file appended to) they stay 0xFFFFFFFF, as ffmpeg writes them to a pipe. It reports on stderr where the
-// time went: the load, and for each text the first audio, the whole and the real-time factor.
+// time went: the load time, and for each text the time to first audio, the whole and the RTFx, the seconds of audio
+// over the seconds they took.
 
 namespace {
 
@@ -204,7 +205,7 @@ int run_tts(const CommandLine & line, FILE * out) {
     const Model model = load_model(path, line.loading(false));
     const ModelInfo info = model_info(model.get());
     const speech_model_info * m = info.get();
-    std::fprintf(stderr, "load %.2f s: %s on %s\n", seconds_since(t0), speech_model_info_name(m), speech_model_info_device(m));
+    std::fprintf(stderr, "load time %.2f s: %s on %s\n", seconds_since(t0), speech_model_info_name(m), speech_model_info_device(m));
     if (verbose) {
         std::fprintf(stderr, "speech.cpp %s, %d Hz, voices: %s; languages: %s\n", speech_version(), speech_model_info_sample_rate(m),
                      joined(speech_model_info_voice_count(m), speech_model_info_voice_name, m).c_str(),
@@ -236,8 +237,8 @@ int run_tts(const CommandLine & line, FILE * out) {
         const double total = seconds_since(speaking.start), audio = (double) made / rate;
         const speech_stop stop = spoken->stop;
         const std::string requests = spoken->requests > 1 ? " in " + std::to_string(spoken->requests) + " requests" : "";
-        std::fprintf(stderr, "%s%.2f s of audio%s: first audio %.3f s, total %.3f s, RTF %.3f", where.c_str(), audio, requests.c_str(),
-                     speaking.first_audio, total, total / audio);
+        std::fprintf(stderr, "%s%.2f s of audio%s: time to first audio %.3f s, total %.3f s, RTFx %.1f", where.c_str(), audio,
+                     requests.c_str(), speaking.first_audio, total, audio / total);
         if (verbose) std::fprintf(stderr, ", seed %lld, %s", (long long) spoken->seed, speech_stop_name(stop));
         std::fprintf(stderr, "\n");
         if (stop == SPEECH_STOP_MAX_SECONDS) {
@@ -253,7 +254,7 @@ int run_tts(const CommandLine & line, FILE * out) {
     wav.finish();
     file.keep();
     if (from_stdin) {
-        std::fprintf(stderr, "%d lines, %.2f s of audio in %.3f s, RTF %.3f\n", count, samples / rate, busy, busy / (samples / rate));
+        std::fprintf(stderr, "%d lines, %.2f s of audio in %.3f s, RTFx %.1f\n", count, samples / rate, busy, samples / rate / busy);
     }
     return model_limit ? 3 : 0;
 }
@@ -284,5 +285,6 @@ Command tts_command() {
     c.min_args = 1;
     c.max_args = 2;
     c.run = run_tts;
+    c.release_notice = ReleaseNotice::AtEnd;
     return c;
 }

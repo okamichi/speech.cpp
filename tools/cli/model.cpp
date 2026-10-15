@@ -328,6 +328,7 @@ Command voice_command() {
     c.min_args = 3;
     c.max_args = SIZE_MAX;
     c.run = run_voice;
+    c.release_notice = ReleaseNotice::AtEnd;
     return c;
 }
 
@@ -349,6 +350,7 @@ Command info_command() {
     c.min_args = 1;
     c.max_args = 1;
     c.run = run_info;
+    c.release_notice = ReleaseNotice::AtEnd;
     return c;
 }
 
@@ -362,5 +364,6 @@ Command devices_command() {
         {"--json", "", false, "print one JSON object, {\"devices\": [{\"name\", \"description\", \"kind\", \"memory_total\", \"memory_free\"}]}"},
     };
     c.run = run_devices;
+    c.release_notice = ReleaseNotice::AtEnd;
     return c;
 }

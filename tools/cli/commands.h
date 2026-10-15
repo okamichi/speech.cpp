@@ -14,5 +14,6 @@ Command models_command();
 Command pull_command();
 Command rm_command();
 Command quantize_command();
+Command update_command();
 Command serve_command();
 Command worker_command();

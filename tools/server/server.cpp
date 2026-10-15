@@ -421,5 +421,6 @@ Command serve_command() {
     c.model = ModelKind::Any;
     c.max_args = 3;
     c.run = run_serve;
+    c.release_notice = ReleaseNotice::AtStart;
     return c;
 }

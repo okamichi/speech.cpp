@@ -85,7 +85,7 @@ void synthesize(const std::shared_ptr<SpeechJob> & job, Turns & turns, uint64_t 
     }, [&](Clock::time_point started) {
         if (!job->samples) return std::string();
         char line[256];
-        std::snprintf(line, sizeof line, ", first audio after %.3f s, %.2f s of audio", seconds_between(started, job->first_audio),
+        std::snprintf(line, sizeof line, ", time to first audio %.3f s, %.2f s of audio", seconds_between(started, job->first_audio),
                       (double) job->samples / job->sample_rate);
         return std::string(line) + (job->requests > 1 ? " from " + std::to_string(job->requests) + " requests" : "");
     });

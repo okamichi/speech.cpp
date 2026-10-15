@@ -53,7 +53,7 @@ public:
 
     std::optional<Transcript> transcribe(utterances::Reservation & reservation, std::vector<float> samples,
                                          const std::vector<RequestOption> & options, Cancellation & cancellation, const std::string & item,
-                                         bool provisional) override {
+                                         bool provisional, const std::string & draft) override {
         Held & held = static_cast<Held &>(reservation);
         const Request request = new_request(held.on->get());
         const size_t n = samples.size();
@@ -62,6 +62,7 @@ public:
         // the audio the session holds while it waits and runs.
         samples = std::vector<float>();
         apply_options(request.get(), held.on->with_defaults(options));
+        apply_draft(request.get(), held.on->get(), draft);
         held.turn.wait();
         const Clock::time_point started = Clock::now();
         // The readings of an utterance under way, several a second, are logged only where one stops or fails.

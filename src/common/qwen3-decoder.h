@@ -82,6 +82,13 @@ enum class Qwen3Readback {
     Logits,
     /** The last row's logits and its hidden state after the final norm. */
     LogitsAndHidden,
+    /**
+     * The last row's greedy pick, the first of its largest logits, picked on the device, and nothing else: four bytes
+     * where the logits of Qwen3's vocabulary are 608 kB. With ggml's argmax reading a row with as many threads as a
+     * workgroup takes, it took Qwen3-ASR 0.6B's decoding in Q8_0 from 122 to 117 ms (34 tokens) on an RTX 2080 with
+     * Vulkan, and changed nothing on an Apple M5 (2026-10-15).
+     */
+    Pick,
 };
 
 /**
@@ -142,6 +149,7 @@ public:
 
     const Qwen3Shape & shape() const { return shape_; }
     Qwen3Attention attention() const { return flash_ ? Qwen3Attention::Flash : Qwen3Attention::Products; }
+    Qwen3Readback readback() const { return readback_; }
     int64_t max_positions() const { return max_positions_; }
     /** The positions of the current sequence that the cache holds. */
     int64_t n_past() const { return n_past_; }
@@ -163,17 +171,31 @@ public:
     /**
      * Runs `n` rows, which `rows` builds, through the stack after the positions the sequence has so far, growing the
      * cache when it has no room for them. With a `head`, an output matrix [hidden, vocabulary], the last row's logits
-     * under `head` are read for logits() and, where the decoder reads it, its hidden state after the final norm for
-     * hidden().
+     * under `head` are read for logits(), or its pick for pick(), and, where the decoder reads it, its hidden state after
+     * the final norm for hidden().
      */
     void run(int64_t n, const Qwen3Rows & rows, ggml_tensor * head = nullptr);
 
     /**
-     * Feeds the token `id`, whose row of `table` is its input, after the sequence, and reads its logits under `head`
-     * and its hidden state as run() does. On a GPU the graph of such a step is kept and computed again for the steps
+     * Feeds the token `id`, whose row of `table` is its input, after the sequence, and reads its logits under `head`,
+     * or its pick, and its hidden state as run() does. On a GPU the graph of such a step is kept and computed again for the steps
      * after it while they read the same block of positions.
      */
     void step(int32_t id, ggml_tensor * table, ggml_tensor * head);
+
+    /**
+     * Feeds the tokens `ids`, whose rows of `table` are their inputs, after the sequence in one graph, and returns for
+     * each the greedy pick of the token after it under `head`, the first of its largest logits, picked on the device;
+     * `logits`, where given, gets every row's logits, [ids, vocabulary] row-major. The rows are computed together, which
+     * rounds differently from a step of each: where two tokens score almost the same, a pick can differ from a step's.
+     */
+    std::vector<int32_t> verify(const std::vector<int32_t> & ids, ggml_tensor * table, ggml_tensor * head, std::vector<float> * logits = nullptr);
+
+    /**
+     * Forgets the positions from `n_past` on, which the next run or step writes again: what a caller does with the
+     * rows of a verify() whose picks it does not keep. More positions than the sequence has throw.
+     */
+    void rewind(int64_t n_past);
 
     /**
      * Starts a sequence of the steps of `chain` and runs them in one graph on the device, which is kept and computed
@@ -188,6 +210,8 @@ public:
     /** The last hidden state read; a decoder that reads none throws. */
     const std::vector<float> & hidden() const;
     const std::vector<float> & logits() const { return logits_; }
+    /** The last pick read; a decoder that reads logits throws. */
+    int32_t pick() const;
 
     /**
      * The keys and the values the cache holds for layer `layer` at the n_past() positions, as float32 a row per
@@ -220,10 +244,11 @@ private:
     ggml_tensor * layers(Graph & g, ggml_tensor * x, int64_t rows, bool output, const RunInputs & inputs);
     /** Builds the graph of a sequence of the steps of `chain` into `kept`. */
     void build_chain(Qwen3Chain & chain, KeptChain & kept);
-    /** The tensors of a graph that a run or step reads back: the hidden state, where it is read, and the logits. */
+    /** The tensors of a graph that a run or step reads back: the hidden state, where it is read, and the logits or the pick. */
     struct Outputs {
         ggml_tensor * hidden = nullptr;
         ggml_tensor * logits = nullptr;
+        ggml_tensor * pick = nullptr;
     };
 
     /**
@@ -256,4 +281,5 @@ private:
     int64_t positions_ = 0;
     int64_t n_past_ = 0;
     std::vector<float> hidden_, logits_;
+    int32_t pick_ = 0;
 };

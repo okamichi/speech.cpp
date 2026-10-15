@@ -89,27 +89,31 @@ void remove_empty_folders(fs::path dir) {
 
 }  // namespace
 
+fs::path cache_dir() {
+#if defined(_WIN32)
+    const fs::path base = environment("LOCALAPPDATA");
+    if (base.empty()) throw io_failure("LOCALAPPDATA is not set, so speech.cpp has no cache folder; set SPEECH_MODEL_DIR to a folder for the models");
+    return base / "speech.cpp";
+#else
+    const fs::path home = environment("HOME");
+    if (home.empty()) throw io_failure("HOME is not set, so speech.cpp has no cache folder; set SPEECH_MODEL_DIR to a folder for the models");
+#if defined(__APPLE__)
+    return home / "Library" / "Caches" / "speech.cpp";
+#else
+    // The XDG Base Directory specification ignores a value that is not an absolute path.
+    const fs::path xdg = environment("XDG_CACHE_HOME");
+    return (xdg.is_absolute() ? xdg : home / ".cache") / "speech.cpp";
+#endif
+#endif
+}
+
 fs::path model_dir() {
     const fs::path chosen = environment("SPEECH_MODEL_DIR");
     if (!chosen.empty()) {
         if (!chosen.is_absolute()) throw io_failure("SPEECH_MODEL_DIR is " + chosen.u8string() + ", not an absolute path; give the folder's whole path");
         return chosen;
     }
-#if defined(_WIN32)
-    const fs::path base = environment("LOCALAPPDATA");
-    if (base.empty()) throw io_failure("LOCALAPPDATA is not set, so the models have no folder; set SPEECH_MODEL_DIR to one");
-    return base / "speech.cpp" / "models";
-#else
-    const fs::path home = environment("HOME");
-    if (home.empty()) throw io_failure("HOME is not set, so the models have no folder; set SPEECH_MODEL_DIR to one");
-#if defined(__APPLE__)
-    return home / "Library" / "Caches" / "speech.cpp" / "models";
-#else
-    // The XDG Base Directory specification ignores a value that is not an absolute path.
-    const fs::path xdg = environment("XDG_CACHE_HOME");
-    return (xdg.is_absolute() ? xdg : home / ".cache") / "speech.cpp" / "models";
-#endif
-#endif
+    return cache_dir() / "models";
 }
 
 fs::path model_path(const CatalogChoice & choice) {

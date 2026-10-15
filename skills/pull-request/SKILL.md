@@ -17,8 +17,9 @@ may be large: a model's options, a feature with its page and docs, a set of fixe
 
 ## 2. Check and commit
 
-- Build and run the checks the change touches; AGENTS.md's Workflow names them (stage checks, `speech-api-check`, the
-  smoke scripts with a model of each family). A defect fix comes with a check that fails before it.
+- Build and run the checks the change touches; AGENTS.md's Workflow names them (stage checks through `checks/run.py`,
+  `speech-api-check`, the smoke scripts with a model of each family). A defect fix comes with a check that fails before
+  it.
 - A defect or a small fix found on the way goes into this pull request when it touches the same place, or into a small
   pull request of its own; it is not left for later.
 - A rebase onto `origin/main` that changes no file a check reads does not call for running that check again; a long

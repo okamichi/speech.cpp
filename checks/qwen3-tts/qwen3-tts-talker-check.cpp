@@ -38,6 +38,7 @@
 #include "qwen3-tts/prompt.h"
 #include "qwen3-tts/sampler.h"
 #include "qwen3-tts/synthesizer.h"
+#include "weight-types.h"
 #include "qwen3-tts/talker.h"
 
 namespace {
@@ -98,6 +99,10 @@ int main(int argc, char ** argv) {
     const std::vector<std::string> args = utf8_args(argc, argv);
     if (args.size() < 3) {
         std::fprintf(stderr, "usage: %s <model.gguf> <reference dir> [gpu|cpu]\n", args[0].c_str());
+        return 2;
+    }
+    if (!takes_weights(args[1], qwen3_tts_layout, {"F32"},
+                       "its bounds explain the rounding of the talker's F16 cache alone")) {
         return 2;
     }
     const std::string dir = args[2];

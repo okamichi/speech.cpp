@@ -1,9 +1,9 @@
 // Checks the text stage of Irodori-TTS against the official implementation: the normalization and the
 // tokenizer on the cases of reference/irodori-tts/text_cases.py, then the text encoder, layer by layer, on
-// the tokens of every dump that has them (dump.py's, and text_cases.py's texts longer than the local
-// window). The text encoder is given the dump's tokens, so its error is its own. With a file that holds the
-// caption's encoder, the same for captions: their strip and tokens on the cases of
-// reference/irodori-tts/caption_cases.py, and the caption condition on the tokens of every dump that has one.
+// the tokens of every dump that has them (dump.py's, and text_cases.py's long texts). The text encoder is given
+// the dump's tokens, so its error is its own. With a file that holds the caption's encoder, the same for captions:
+// their strip and tokens on the cases of reference/irodori-tts/caption_cases.py, and the caption condition on the
+// tokens of every dump that has one. Each takes the cases and dumps made with the model of the file alone.
 //
 // usage: irodori-text-check <model.gguf> <reference out dir> [gpu|cpu|device name]
 
@@ -16,11 +16,13 @@
 #include "args.h"
 #include "backend.h"
 #include "compare.h"
+#include "irodori-dumps.h"
 #include "irodori-tts/layout.h"
 #include "irodori-tts/text-encoder.h"
 #include "irodori-tts/text-normalizer.h"
 #include "irodori-tts/tokenizer.h"
 #include "npy.h"
+#include "weight-types.h"
 
 using namespace irodori;
 
@@ -67,6 +69,32 @@ int check_cases(const Tokenizer & tokenizer, const std::string & path, std::stri
     return failed;
 }
 
+/**
+ * The folders under `root`, at any depth, that hold `file` and a meta.json naming the model of `repository`: a link to a
+ * folder is followed, as in a worktree whose out/ links another checkout's dumps.
+ */
+std::vector<std::filesystem::path> folders_with(const std::filesystem::path & root, const std::string & file, const std::string & repository) {
+    std::vector<std::filesystem::path> found;
+    const auto follow = std::filesystem::directory_options::follow_directory_symlink;
+    for (const auto & e : std::filesystem::recursive_directory_iterator(root, follow)) {
+        if (!e.is_regular_file() || e.path().filename() != file) continue;
+        const std::filesystem::path d = e.path().parent_path();
+        if (std::filesystem::exists(d / "meta.json") && IrodoriDump(d).repository() == repository) found.push_back(d);
+    }
+    std::sort(found.begin(), found.end());
+    return found;
+}
+
+/** The cases of the one folder under `root` that holds `file` for the model of `repository`. */
+std::string cases_of(const std::filesystem::path & root, const std::string & file, const std::string & repository) {
+    const std::vector<std::filesystem::path> found = folders_with(root, file, repository);
+    if (found.size() != 1) {
+        throw std::runtime_error(std::to_string(found.size()) + " folders under " + root.u8string() + " hold " + file + " for " + repository +
+                                 "; make one with reference/irodori-tts/");
+    }
+    return (found[0] / file).u8string();
+}
+
 }  // namespace
 
 int main(int argc, char ** argv) {
@@ -76,21 +104,26 @@ int main(int argc, char ** argv) {
         return 2;
     }
     try {
+        if (!takes_weights(args[1], model_layout, {"F32", "F16", "Q8_0"},
+                           "its bound is the one measured with them")) {
+            return 2;
+        }
         ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
         std::printf("backend: %s\n", ggml_backend_name(backend));
         const ModelFile model(args[1], backend, model_layout);
         const Tokenizer tokenizer(model);
         const TextEncoder encoder(model);
         const std::filesystem::path dir = std::filesystem::u8path(args[2]);
+        const std::string repository = model.str("general.source.repo_url");
 
         int total = 0;
-        const int failed = check_cases(tokenizer, (dir / "text" / "text-cases.tsv").u8string(), normalize_text, total);
+        const int failed = check_cases(tokenizer, cases_of(dir, "text-cases.tsv", repository), normalize_text, total);
         std::printf("normalization and tokenizer: %d of %d cases match\n", total - failed, total);
         bool ok = failed == 0;
         const bool caption = model.boolean("irodori-tts.caption_condition");
         if (caption) {
             int captions = 0;
-            const int caption_failed = check_cases(tokenizer, (dir / "caption" / "caption-cases.tsv").u8string(), strip_caption, captions);
+            const int caption_failed = check_cases(tokenizer, cases_of(dir, "caption-cases.tsv", repository), strip_caption, captions);
             std::printf("caption strip and tokenizer: %d of %d cases match\n", captions - caption_failed, captions);
             ok = ok && caption_failed == 0;
         } else {
@@ -98,14 +131,7 @@ int main(int argc, char ** argv) {
         }
 
         ggml_gallocr_t allocr = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
-        std::vector<std::filesystem::path> dumps;
-        // A dump may be a link to a folder, as in a worktree whose out/ links another checkout's dumps; the iterator
-        // descends into a linked folder only when told to.
-        const auto follow = std::filesystem::directory_options::follow_directory_symlink;
-        for (const auto & e : std::filesystem::recursive_directory_iterator(dir, follow)) {
-            if (e.is_regular_file() && e.path().filename() == "text_layers.npy") dumps.push_back(e.path().parent_path());
-        }
-        std::sort(dumps.begin(), dumps.end());
+        const std::vector<std::filesystem::path> dumps = folders_with(dir, "text_layers.npy", repository);
         double worst = INFINITY;
         for (const auto & d : dumps) {
             const Npy ids = read_npy((d / "input_ids.npy").u8string());
@@ -129,15 +155,12 @@ int main(int argc, char ** argv) {
             }
             const Diff ds = compare(Graph::read(out), state.f32);
             std::printf("%s (%zu tokens)\n", d.filename().u8string().c_str(), n);
-            print_diff("  worst text encoder layer " + std::to_string(worst_index), worst_layer);
+            print_diff("  worst backbone layer " + std::to_string(worst_index), worst_layer);
             print_diff("  text condition", ds);
             worst = std::min(worst, std::min(ds.snr_db, worst_layer.snr_db));
         }
-        std::vector<std::filesystem::path> captions;
-        for (const auto & e : std::filesystem::recursive_directory_iterator(dir, follow)) {
-            if (caption && e.is_regular_file() && e.path().filename() == "caption_state.npy") captions.push_back(e.path().parent_path());
-        }
-        std::sort(captions.begin(), captions.end());
+        const std::vector<std::filesystem::path> captions =
+            caption ? folders_with(dir, "caption_state.npy", repository) : std::vector<std::filesystem::path>{};
         for (const auto & d : captions) {
             const Npy ids = read_npy((d / "caption_ids.npy").u8string());
             const Npy state = read_npy((d / "caption_state.npy").u8string());

@@ -1,10 +1,10 @@
 // Checks the speaker encoder and the duration predictor of Irodori-TTS against the official implementation
-// on every dump of reference/irodori-tts/dump.py, each stage from the dump's own inputs: the reference latent
-// for the speaker encoder, and the text, speaker and caption conditions for the duration predictor, the null
-// speaker for a dump without a reference, the embedding's first token for one of an embedding, and the null caption
-// for one without instructions. The length is checked against the frames the official runtime synthesized,
-// with the dump's seconds, duration scale and speed: a dump with fixed seconds has no prediction, and only its
-// length is checked.
+// on every dump of reference/irodori-tts/dump.py made with the file's model, each stage from the dump's own inputs:
+// the reference latent for the speaker encoder, and the text, speaker and caption conditions for the duration
+// predictor, the null speaker for a dump without a reference, the embedding's first token for one of an embedding, and
+// the null caption for one without instructions. The length is checked against the frames the official runtime
+// synthesized, with the dump's seconds, duration scale and speed: a dump with fixed seconds has no prediction, and only
+// its length is checked.
 //
 // usage: irodori-condition-check <model.gguf> <reference out dir> [gpu|cpu|device name]
 
@@ -23,6 +23,7 @@
 #include "irodori-tts/layout.h"
 #include "irodori-tts/speaker-encoder.h"
 #include "npy.h"
+#include "weight-types.h"
 
 using namespace irodori;
 
@@ -33,6 +34,10 @@ int main(int argc, char ** argv) {
         return 2;
     }
     try {
+        if (!takes_weights(args[1], model_layout, {"F32", "F16", "Q8_0"},
+                           "its bounds are those measured with them")) {
+            return 2;
+        }
         ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
         std::printf("backend: %s\n", ggml_backend_name(backend));
         const ModelFile model(args[1], backend, model_layout);
@@ -42,17 +47,10 @@ int main(int argc, char ** argv) {
         const bool caption = model.boolean("irodori-tts.caption_condition");
         ggml_gallocr_t allocr = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
 
-        // The speaker encoder and the duration predictor are the same in v4.1-Small-MF and v4.1-Small, so every
-        // dump checks them, whichever model made it.
-        std::vector<std::filesystem::path> dirs;
-        for (const auto & e : std::filesystem::directory_iterator(std::filesystem::u8path(args[2]))) {
-            if (std::filesystem::exists(e.path() / "meta.json") && std::filesystem::exists(e.path() / "dit_t.npy")) dirs.push_back(e.path());
-        }
-        std::sort(dirs.begin(), dirs.end());
-        bool ok = !dirs.empty();
-        for (const auto & dir : dirs) {
-            const IrodoriDump d(dir);
-            std::printf("%s\n", dir.filename().u8string().c_str());
+        const std::vector<IrodoriDump> dumps = irodori_dumps(args[2], model.str("general.source.repo_url"), "dit_t.npy");
+        bool ok = !dumps.empty();
+        for (const IrodoriDump & d : dumps) {
+            std::printf("%s\n", d.dir().filename().u8string().c_str());
             if (!d.reference() && !null_speaker) {
                 std::printf("  skipped: the file lacks the null speaker that a request without a reference speaks with\n");
                 continue;

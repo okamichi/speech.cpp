@@ -83,11 +83,12 @@ public:
     }
 
     std::optional<Transcript> transcribe(utterances::Reservation &, const utterances::Asked & asked, std::vector<float> samples, int rate,
-                                         Cancellation & cancellation, uint64_t utterance, bool provisional) override {
+                                         Cancellation & cancellation, uint64_t utterance, bool provisional, const std::string & draft) override {
         const auto t0 = Clock::now();
         const Request request = new_request(model_);
         check(speech_request_set_audio(request.get(), samples.data(), samples.size(), rate));
         apply_options(request.get(), asked.options);
+        apply_draft(request.get(), model_, draft);
         if (check(cancellation.run(request.get(), [&] { return speech_transcribe(request.get()); })) == SPEECH_CANCELLED) return std::nullopt;
         std::lock_guard<std::mutex> lock(mutex_);
         if (provisional) readings_++;

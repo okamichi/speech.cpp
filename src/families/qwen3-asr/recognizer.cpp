@@ -27,9 +27,10 @@ Recognizer::Recognizer(const std::string & path, ggml_backend_t backend, std::op
     : model_(path, backend, layout),
       frontend_(model_),
       encoder_(model_, backend),
-      decoder_(model_, backend, kCacheType, attention),
+      decoder_(model_, backend, kCacheType, Qwen3Readback::Pick, attention),
       tokenizer_(model_),
       prompt_(model_, tokenizer_),
+      asr_text_(tokenizer_.encode(model_.str("qwen3-asr.prompt.asr_text")).back()),
       transcript_(model_),
       splitter_(model_) {}
 
@@ -52,12 +53,17 @@ Recognition Recognizer::recognize(const std::vector<float> & samples, const Reco
                         "prompt");
         }
     }
+    std::optional<Draft> draft;
+    if (!request.draft.empty()) draft.emplace(naming("draft", [&] { return tokenizer_.encode(request.draft); }), asr_text_, false);
     Recognition out;
     for (size_t k = 0; k < n_parts; k++) {
         const std::vector<float> part(audio.begin() + (std::ptrdiff_t) bounds[k], audio.begin() + (std::ptrdiff_t) bounds[k + 1]);
         PartReport report;
-        const std::optional<Parsed> parsed =
-            recognize_part(part, prompts[k], request.language, [&](double done) { return progress((k + done) / n_parts); }, report);
+        // A forced language ends the prompt with the token after which the text begins.
+        if (draft) draft->next_part(request.language.has_value());
+        const std::optional<Parsed> parsed = recognize_part(part, prompts[k], request.language,
+                                                            [&](double done) { return progress((k + done) / n_parts); },
+                                                            draft ? &*draft : nullptr, report);
         if (!parsed) return {};
         // qwen-asr joins the texts of the parts without a separator.
         out.text += parsed->text;
@@ -73,7 +79,7 @@ Recognition Recognizer::recognize(const std::vector<float> & samples, const Reco
 }
 
 std::optional<Parsed> Recognizer::recognize_part(const std::vector<float> & part, const PromptIds & prompt, std::optional<size_t> forced,
-                                                 const std::function<bool(double)> & progress, PartReport & report) {
+                                                 const std::function<bool(double)> & progress, Draft * draft, PartReport & report) {
     const int64_t n = (int64_t) prompt.ids.size();
     std::vector<float> embeds;
     {
@@ -102,10 +108,15 @@ std::optional<Parsed> Recognizer::recognize_part(const std::vector<float> & part
     std::optional<Generation> generation;
     {
         Timer t{&report.decode};
-        generation = decoder_.generate([&](size_t tokens) { return progress((2 + (double) tokens / decoder_.max_new_tokens()) / 3); });
+        generation = decoder_.generate([&](size_t tokens) { return progress((2 + (double) tokens / decoder_.max_new_tokens()) / 3); }, draft);
     }
     if (!generation) return std::nullopt;
     report.ids = generation->ids;
+    if (draft) {
+        report.draft_checks = draft->checks;
+        report.draft_checked = draft->checked;
+        report.draft_kept = draft->kept;
+    }
     report.limited = generation->limited;
     return transcript_.parse(tokenizer_.decode(generation->ids), forced);
 }

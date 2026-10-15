@@ -22,6 +22,8 @@ struct RecognitionRequest {
     std::string context;
     /** An index of general.languages, or none to let the model write the language. */
     std::optional<size_t> language;
+    /** The text the recognition is likely to write, whose tokens the decoding checks a few at a time, or none. */
+    std::string draft;
 };
 
 /**
@@ -44,6 +46,8 @@ struct PartReport {
     int64_t prompt_rows = 0;
     std::vector<int32_t> ids;
     bool limited = false;
+    /** With a draft, the steps that checked its tokens, the tokens they checked and those kept, in the parts so far. */
+    int draft_checks = 0, draft_checked = 0, draft_kept = 0;
 };
 
 /**
@@ -85,6 +89,8 @@ public:
     Encoder & encoder() { return encoder_; }
     Decoder & decoder() { return decoder_; }
     const Tokenizer & tokenizer() const { return tokenizer_; }
+    /** The token after which the model writes its text, where a draft begins. */
+    int32_t asr_text() const { return asr_text_; }
     const Prompt & prompt() const { return prompt_; }
     const Transcript & transcript() const { return transcript_; }
 
@@ -92,11 +98,12 @@ public:
 
 private:
     /**
-     * Recognizes one part of normalized audio with its prompt and the language it forces, `progress` hearing the part's
-     * share from 0 to 1, and returns the parse of its output, or none when `progress` stopped it.
+     * Recognizes one part of normalized audio with its prompt and the language it forces, decoding with `draft` where
+     * given, `progress` hearing the part's share from 0 to 1, and returns the parse of its output, or none when
+     * `progress` stopped it.
      */
     std::optional<Parsed> recognize_part(const std::vector<float> & part, const PromptIds & prompt, std::optional<size_t> forced,
-                                         const std::function<bool(double)> & progress, PartReport & report);
+                                         const std::function<bool(double)> & progress, Draft * draft, PartReport & report);
 
     ModelFile model_;
     Frontend frontend_;
@@ -104,6 +111,8 @@ private:
     Decoder decoder_;
     Tokenizer tokenizer_;
     Prompt prompt_;
+    /** The token after which the model writes its text, where a draft begins. */
+    int32_t asr_text_;
     Transcript transcript_;
     Splitter splitter_;
 };

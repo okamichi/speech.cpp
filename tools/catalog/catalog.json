@@ -5,7 +5,7 @@
       "repository": "sakasegawa/Qwen3-TTS-12Hz-0.6B-CustomVoice-GGUF",
       "type": "q8_0",
       "start": ["de", "en", "es", "fr", "it", "ja", "ko", "pt", "ru", "zh"],
-      "revision": "15c8bffcc084a88e16dc0306472b6b174e4745a9",
+      "revision": "fd9df9364613a92a86b4137074bc281204823033",
       "task": "synthesis",
       "languages": ["de", "en", "es", "fr", "it", "ja", "ko", "pt", "ru", "zh"],
       "voice_files": false,
@@ -21,7 +21,7 @@
       "repository": "sakasegawa/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF",
       "type": "q8_0",
       "start": [],
-      "revision": "b61828442c27dccc6ba07f2610cd1abd16fdc967",
+      "revision": "a72e6c6575d67652488cdffc1c863215a9899978",
       "task": "synthesis",
       "languages": ["de", "en", "es", "fr", "it", "ja", "ko", "pt", "ru", "zh"],
       "voice_files": false,
@@ -37,7 +37,7 @@
       "repository": "sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF",
       "type": "f16",
       "start": [],
-      "revision": "205ab071cb54e46509a84d3a48535df283bc3b0f",
+      "revision": "9db7da1bec3d1069ef8e29732e0497be60c7b047",
       "task": "synthesis",
       "languages": ["ja"],
       "voice_files": true,
@@ -54,7 +54,7 @@
       "repository": "sakasegawa/Irodori-TTS-v4.1-Small-GGUF",
       "type": "f16",
       "start": [],
-      "revision": "a8d7c01cf5c306d7b495a1db61e027ca4a9c269a",
+      "revision": "66fe2cde1973fd44e7202fbe36df722103958188",
       "task": "synthesis",
       "languages": ["ja"],
       "voice_files": true,
@@ -64,6 +64,23 @@
         {"type": "q6_k", "file": "Irodori-TTS-859M-v4.1-Q6_K.gguf", "size": 1034979488, "sha256": "6d9843d2f6e7d9b749adb7ac74092af1e4d4960f6a8f2a60087aa744c1e2ee07"},
         {"type": "q5_k", "file": "Irodori-TTS-859M-v4.1-Q5_K.gguf", "size": 944771936, "sha256": "1e3b5c1e088d5c9a2d870be059514d9b13fe6df2ab80e2c00614fb049add91ff"},
         {"type": "q4_k", "file": "Irodori-TTS-859M-v4.1-Q4_K.gguf", "size": 859871072, "sha256": "a1c174f4552817e84dd6a2a020bc3d0589fd7f30d0c3db53ad04a1e69fb5dbfd"}
+      ]
+    },
+    {
+      "name": "irodori-tts-large",
+      "repository": "sakasegawa/Irodori-TTS-v4-Large-GGUF",
+      "type": "q8_0",
+      "start": [],
+      "revision": "79cae5947a97e941c62912749e1387c8b35ec16b",
+      "task": "synthesis",
+      "languages": ["ja"],
+      "voice_files": true,
+      "files": [
+        {"type": "q8_0", "file": "Irodori-TTS-3.4B-v4-Q8_0.gguf", "size": 3875154272, "sha256": "836a2deda5115e4400d25674612ff30d704a358d0b16cf96a3eb510dc416bc4e"},
+        {"type": "f16", "file": "Irodori-TTS-3.4B-v4-F16.gguf", "size": 6957138240, "sha256": "a0d4751d88cb9befea38d893081f2b0e48206225da038d12784a25288ac86d50"},
+        {"type": "q6_k", "file": "Irodori-TTS-3.4B-v4-Q6_K.gguf", "size": 3265717088, "sha256": "7809eb432dda9ea6496ce70f6f26c5081027ef944300b3bde498ab5573c8df94"},
+        {"type": "q5_k", "file": "Irodori-TTS-3.4B-v4-Q5_K.gguf", "size": 2931509600, "sha256": "f3cac502a0efce351628bf680998daae807fa1244ae4fab67441b3b3dcf105f5"},
+        {"type": "q4_k", "file": "Irodori-TTS-3.4B-v4-Q4_K.gguf", "size": 2616961376, "sha256": "ac3e473f393b620c108c18ba848c337abb6d2348844da90c8b291812dd96bd6e"}
       ]
     },
     {

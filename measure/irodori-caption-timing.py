@@ -1,7 +1,7 @@
 """Times Irodori-TTS through `speech worker` with and without instructions (the runtime's caption): each sentence of a
 speech-bench prompts file one request at a time after the worker is ready, in one voice, first without instructions and
-then with each caption given. For each, the median and the 90th percentile of the first audio, the time from the request
-to its first chunk, and the real-time factor, the request's time over its audio's. It prints one JSON object per line.
+then with each caption given. For each, the p50 and the p90 of the time to first audio, from the request to its first
+chunk, and the median RTFx, the request's seconds of audio over the seconds it took. It prints one JSON object per line.
 
 usage: python3 measure/irodori-caption-timing.py <speech> <model.gguf> <prompts.json> <voice NAME=FILE> [--steps N]
                                                  [--caption TEXT]... [-- worker options...]
@@ -42,7 +42,7 @@ rate = worker.ready["model"]["sample_rate"]
 
 
 def run(instructions):
-    first, factors = [], []
+    first, rtfx = [], []
     for i, prompt in enumerate(prompts):
         request = {"type": "synthesize", "id": str(i), "text": prompt["text"], "voice": name, "seed": 1}
         if steps:
@@ -57,9 +57,10 @@ def run(instructions):
             raise SystemExit(f"{prompt['id']}: {end}")
         chunks = [m for m in messages if m["type"] == "chunk"]
         first.append(chunks[0]["_at"] - sent)
-        factors.append((end["_at"] - sent) / (end["samples"] / rate))
-    return {"instructions": instructions, "sentences": len(prompts), "steps": steps, "first_audio_median": statistics.median(first),
-            "first_audio_p90": statistics.quantiles(first, n=10)[-1], "real_time_factor": statistics.median(factors)}
+        rtfx.append(end["samples"] / rate / (end["_at"] - sent))
+    return {"instructions": instructions, "sentences": len(prompts), "steps": steps,
+            "time_to_first_audio_p50": statistics.median(first), "time_to_first_audio_p90": statistics.quantiles(first, n=10)[-1],
+            "rtfx": statistics.median(rtfx)}
 
 
 for instructions in ["", *(captions or [CAPTION])]:
