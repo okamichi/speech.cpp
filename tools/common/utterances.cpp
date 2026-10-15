@@ -269,7 +269,10 @@ void Assembly::commit_samples(uint64_t number, uint64_t first, uint64_t last) {
     if (asked_) {
         Final f;
         f.number = number;
-        if (current_ && current_->number == number) f.sent = current_->sent;
+        if (current_ && current_->number == number) {
+            f.sent = current_->sent;
+            f.draft = current_->last_reading;
+        }
         f.asked = *asked_;
         // The recognition takes its place as the utterance is committed, so that it runs before what comes later.
         try {
@@ -345,7 +348,7 @@ void Assembly::work() {
             try {
                 if (f.refused) std::rethrow_exception(f.refused);
                 std::optional<Transcript> t =
-                    recognizer_.transcribe(*f.reservation, f.asked, std::move(f.samples), rate_, *cancellation, f.number, false);
+                    recognizer_.transcribe(*f.reservation, f.asked, std::move(f.samples), rate_, *cancellation, f.number, false, f.draft);
                 if (t) {
                     e.kind = Event::Kind::Completed;
                     e.transcript = std::move(*t);
@@ -389,11 +392,13 @@ void Assembly::work() {
             continue;
         }
         std::vector<float> samples(audio_.begin() + (long) (current_->start - buffer_), audio_.end());
+        // Each reading reads the utterance from its start again, and the reading before is the likeliest text of this one.
+        const std::string draft = current_->last_reading;
         const std::shared_ptr<Cancellation> cancellation = reading_ = std::make_shared<Cancellation>();
         lock.unlock();
         std::optional<Transcript> t;
         try {
-            t = recognizer_.transcribe(*reservation, asked, std::move(samples), rate_, *cancellation, number, true);
+            t = recognizer_.transcribe(*reservation, asked, std::move(samples), rate_, *cancellation, number, true, draft);
         } catch (...) {
             // A reading that fails adds no text; the recognition of the whole utterance reports the failure.
         }

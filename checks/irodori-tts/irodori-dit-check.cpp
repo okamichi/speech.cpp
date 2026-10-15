@@ -21,6 +21,7 @@
 #include "irodori-tts/layout.h"
 #include "irodori-tts/sampler.h"
 #include "npy.h"
+#include "weight-types.h"
 
 using namespace irodori;
 
@@ -31,6 +32,14 @@ int main(int argc, char ** argv) {
         return 2;
     }
     try {
+        // With F16 weights on the CPU of an Apple M5 (2026-10-13), RF's rf-hai-rescale samples a latent 15.6 dB from
+        // the official's and 16.2 dB from the one of the default guidance, so the check cannot tell the request's
+        // guidance from the weights' rounding; MF's dumps pass with F16.
+        if (!takes_weights(args[1], model_layout, {"F32"},
+                           "the sampler's steps carry the rounding of half-precision or quantized weights as far as a "
+                           "request's guidance moves the latent")) {
+            return 2;
+        }
         ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
         std::printf("backend: %s\n", ggml_backend_name(backend));
         const ModelFile model(args[1], backend, model_layout);
@@ -142,7 +151,10 @@ int main(int argc, char ** argv) {
                 const std::vector<float> default_x =
                     sampler.sample(plain, noise.f32, frames, steps, sampler.check(sampler.guidance(), steps, d.reference(), d.caption()));
                 const Diff dd = compare(default_x.data(), &xs.f32[(steps - 1) * n], n);
-                print_diff("  the same with the default guidance", dd);
+                // Printed as the distance it is, not as an SNR: here a low SNR is what the check wants, and checks/run.py
+                // shows a check's least SNR as its result.
+                std::printf("  the default guidance's latent lies %.1f dB from the official's, %.1f dB further than the request's\n",
+                            dd.snr_db, df.snr_db - dd.snr_db);
                 ok = ok && dd.snr_db + 6 < df.snr_db;
             }
         }

@@ -49,12 +49,13 @@ public:
     /**
      * Recognizes `samples` at kRate in `reservation`'s turn on its model, with `options`, and returns the recognition, or
      * nothing once `cancellation` stops it; an option the model does not take throws the library's Failure. It lets the
-     * samples go once the library's request has copied them. `item` names the item for a log, and `provisional` says
-     * whether the samples are the beginning of an utterance under way, read for its deltas.
+     * samples go once the library's request has copied them. `item` names the item for a log, `provisional` says
+     * whether the samples are the beginning of an utterance under way, read for its deltas, and `draft` is the text the
+     * utterance's last reading gave, or "", which it sets as the option draft where the model takes it.
      */
     virtual std::optional<Transcript> transcribe(utterances::Reservation & reservation, std::vector<float> samples,
                                                  const std::vector<RequestOption> & options, Cancellation & cancellation,
-                                                 const std::string & item, bool provisional) = 0;
+                                                 const std::string & item, bool provisional, const std::string & draft) = 0;
     /**
      * A detection of audio at kRate with `options` on the detection model held, which it keeps: none held, or one being
      * loaded, throws an ApiError, and an option the model refuses the library's Failure.
@@ -106,7 +107,8 @@ private:
         Reader(Models & models, Events & events) : models_(models), events_(events) {}
         std::unique_ptr<utterances::Reservation> reserve(const utterances::Asked & asked) override;
         std::optional<Transcript> transcribe(utterances::Reservation & reservation, const utterances::Asked & asked, std::vector<float> samples,
-                                             int rate, Cancellation & cancellation, uint64_t utterance, bool provisional) override;
+                                             int rate, Cancellation & cancellation, uint64_t utterance, bool provisional,
+                                             const std::string & draft) override;
 
     private:
         Models & models_;

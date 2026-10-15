@@ -7,9 +7,13 @@ Japanese in the voice of a reference recording, a sentence at a time.
 |---|---|---|
 | `irodori-tts-mf` | [Aratako/Irodori-TTS-v4.1-Small-MF](https://huggingface.co/Aratako/Irodori-TTS-v4.1-Small-MF) | `Irodori-TTS-866M-MF-v4.1-F16.gguf`, 1.92 GB |
 | `irodori-tts` | [Aratako/Irodori-TTS-v4.1-Small](https://huggingface.co/Aratako/Irodori-TTS-v4.1-Small) | `Irodori-TTS-859M-v4.1-F16.gguf`, 1.91 GB |
+| `irodori-tts-large` | [Aratako/Irodori-TTS-v4-Large](https://huggingface.co/Aratako/Irodori-TTS-v4-Large) | `Irodori-TTS-3.4B-v4-Q8_0.gguf`, 3.88 GB |
 
 v4.1-Small-MF samples in 4 MeanFlow steps. v4.1-Small samples in Euler steps (40 by default) with guidance, which makes
-it slower and lets a request tune more.
+it slower and lets a request tune more. v4-Large samples as v4.1-Small does, with a model four times as large whose text
+encoder is Google's T5Gemma 2: it follows a voice described in words and a reference more closely, reads kanji slightly
+less accurately, and is two to four times slower. v4-Large is under the [Gemma Terms of Use](https://ai.google.dev/gemma/terms), the others under the MIT
+License.
 
 ```sh
 speech voice irodori-tts-mf me.wav me.voice.gguf
@@ -19,8 +23,8 @@ speech tts irodori-tts --add-voice me=me.voice.gguf --voice me --steps 16 --spee
 
 ## Local Anime and Large checkpoints
 
-The conversion tools also take full-precision v4.1-Anime and v4-Large checkpoints. These models are not in the
-catalog. Use the root `model.safetensors` and `tokenizer/` of each repository; torchao's quantized checkpoints cannot
+The conversion tools also take full-precision v4.1-Anime and v4-Large checkpoints. Anime is available as a local
+conversion; Large is also available as `irodori-tts-large` in the catalog. Use the root `model.safetensors` and `tokenizer/` of each repository; torchao's quantized checkpoints cannot
 be used as GGUF inputs. Large uses T5Gemma2 and Anime uses ModernBERT.
 
 From the repository root, with the upstream folders beside it:
@@ -48,9 +52,8 @@ build/speech serve models/Irodori-TTS-v4-Large.gguf --device MTL0
 build/speech serve models/Irodori-TTS-v4-Large-Quantized.gguf --device MTL0
 ```
 
-These conversions write layout 3, which requires a build with the local conversion changes. Published layout 2
-Small and Small-MF files remain readable. Large's T5Gemma2 has stage checks on synthetic official weights; its full
-synthesis still needs comparison against the official runtime after conversion.
+These conversions write the upstream layout 3. Reconvert GGUF files made with the fork's `text.encoder` and
+`tokenizer.type` keys before using them with this build. Published layout 1 and 2 files remain readable.
 
 ## What it does
 
@@ -73,7 +76,7 @@ A voice is one of these:
 - **A reference WAVE file** of at most 120 s, at any rate. Adding it encodes it each time, which takes 0.4 to 0.7 s for
   10 s of audio.
 - **A voice file**, which `speech voice` writes once from one or more references. It loads in under 0.03 s and works
-  with both models in any type; a model of another codec refuses it.
+  with every model in any type; a model of another codec refuses it.
 - **A voice file of a speaker-inversion embedding**, which `speech voice` makes from the `.speaker.safetensors` file the
   official training saves. It works only with the model it was made for.
 
@@ -93,7 +96,7 @@ speech voice Irodori-TTS-859M-v4.1-F16.gguf my-speaker.speaker.safetensors my-sp
 | `voice` | required | `none`, or a voice added since loading |
 | `language` | `auto` | `ja`; only checked |
 | `seed` | drawn | 0 to 2^53 - 1 |
-| `steps` | 4 (MF), 40 (RF) | 1 or more |
+| `steps` | 4 (MF), 40 (the others) | 1 or more |
 | `seconds` | none | 0.5 to 30: fixes the length instead of predicting it |
 | `duration_scale` | 1 | above 0: multiplies the predicted length |
 | `speed` | 1 | 0.25 to 4: divides the length, as [Irodori-TTS-Server](https://github.com/Aratako/Irodori-TTS-Server) does with OpenAI's `speed` |
@@ -101,8 +104,8 @@ speech voice Irodori-TTS-859M-v4.1-F16.gguf my-speaker.speaker.safetensors my-sp
 | `keep_tail` | false | keep the whole length, rather than end where the speech goes silent |
 | `tail_window_size`, `tail_std_threshold`, `tail_mean_threshold` | 20, 0.05, 0.1 | how silence is found: this many frames with a spread and a mean under these |
 
-v4.1-Small (RF) also takes the runtime's sampling settings. v4.1-Small-MF takes none of them: MeanFlow folded the guidance
-into its training.
+v4.1-Small and v4-Large also take the runtime's sampling settings. v4.1-Small-MF takes none of them: MeanFlow folded the
+guidance into its training.
 
 | Option | Default | What it does |
 |---|---|---|
@@ -114,7 +117,7 @@ into its training.
 | `truncation_factor` | none | multiplies the starting noise |
 | `rescale_k`, `rescale_sigma` | none | temporal score rescaling; both or neither |
 | `speaker_kv_scale` | 1 | above 1, the speech follows the voice more closely |
-| `speaker_kv_min_t`, `speaker_kv_max_layers` | 0.9, 12 | the steps and layers that `speaker_kv_scale` applies to |
+| `speaker_kv_min_t`, `speaker_kv_max_layers` | 0.9, 12 (24 for v4-Large) | the steps and layers that `speaker_kv_scale` applies to |
 
 `speech info` shows each option's range. A request whose options contradict each other, or set one that another leaves
 without effect, is refused before any work, naming the option: `seconds` with `duration_scale`, for example, or the
@@ -171,35 +174,69 @@ Every stage is checked against the official implementation's tensors on an Apple
 | Whole synthesis from the official noise | 75 to 110 dB, the official length | 22 to 61 dB, the same length | 58 dB (MF), the same length |
 
 On a GPU the audio is the same speech rather than the same waveform, since the GPU's matrix kernels round differently.
+v4-Large is checked the same way: all 164 texts and 18 captions give the official tokens on every device, and the whole
+synthesis is 76.7 dB from the official on the CPU in F32, 15 to 16 dB on Metal and 58.7 dB on Vulkan with F16 on a short
+sentence.
 
 ## Weight types
 
-Each model comes in five types; `NAME:TYPE` fetches one (`speech tts irodori-tts:q8_0`). speech-bench on 2026-10-12, on
-an Apple M5 with Metal: the 20 sentences of its `prompts/speak-ja-JP.json` in a voice file of one reference, seeds 1, 2
-and 3, v4.1-Small with 16 steps, as Qwen3-ASR 1.7B hears them. The memory is the peak of one request. The codec stays
-F32 in every type, which is why the files shrink less than the other models'. The CER of one type moves by a point or
-two from seed to seed; v4.1-Small-MF's is higher in every quantized type than in F16.
+Each model comes in five types; `NAME:TYPE` fetches one (`speech tts irodori-tts:q8_0`). speech-bench on 2026-10-14,
+two rounds, on an Apple M5 with Metal and an RTX 2080 with Vulkan: the 20 sentences of its `prompts/speak-ja-JP.json`
+in a voice file of one reference, seed 1, v4.1-Small with 16 steps, as Qwen3-ASR 1.7B hears them. The peak memory is the
+process's on the M5, whose GPU shares it, and the VRAM the video memory in use on the RTX 2080. The codec stays F32 in
+every type, which is why the files shrink less than the other models'. The CER of one type moves by a point or two from
+seed to seed and from one machine to the other, and more for v4.1-Small-MF.
 
-| Type | v4.1-Small-MF file | Memory | CER | v4.1-Small file | Memory | CER |
+| Model | Type | File | CER, M5 / RTX 2080 | Peak memory, M5 | VRAM, RTX 2080 | RTFx, M5 / RTX 2080 |
 |---|---|---|---|---|---|---|
-| F16 | 1.92 GB | 2.04 GB | 5.92% | 1.91 GB | 2.03 GB | 3.43% |
-| Q8_0 | 1.21 GB | 1.33 GB | 8.35% | 1.20 GB | 1.32 GB | 4.09% |
-| Q6_K | 1.04 GB | 1.16 GB | 7.35% | 1.03 GB | 1.16 GB | 3.65% |
-| Q5_K | 0.95 GB | 1.07 GB | 7.74% | 0.94 GB | 1.07 GB | 4.37% |
-| Q4_K | 0.86 GB | 0.99 GB | 7.57% | 0.86 GB | 0.98 GB | 4.54% |
+| v4.1-Small-MF | F16 | 1.92 GB | 6.5% / 6.3% | 2.04 GB | 2.30 GB | 7.7 / 18 |
+| v4.1-Small-MF | Q8_0 | 1.21 GB | 9.5% / 8.6% | 1.33 GB | 1.59 GB | 7.4 / 18 |
+| v4.1-Small-MF | Q6_K | 1.04 GB | 8.3% / 8.1% | 1.16 GB | 1.44 GB | 7.4 / 18 |
+| v4.1-Small-MF | Q5_K | 0.95 GB | 5.0% / 5.0% | 1.07 GB | 1.33 GB | 7.1 / 18 |
+| v4.1-Small-MF | Q4_K | 0.86 GB | 7.1% / 8.8% | 0.99 GB | 1.25 GB | 7.5 / 18 |
+| v4.1-Small, 16 steps | F16 | 1.91 GB | 3.2% / 3.2% | 2.04 GB | 2.39 GB | 3.5 / 8.4 |
+| v4.1-Small, 16 steps | Q8_0 | 1.20 GB | 3.5% / 3.2% | 1.33 GB | 1.69 GB | 3.4 / 8.5 |
+| v4.1-Small, 16 steps | Q6_K | 1.03 GB | 3.2% / 3.3% | 1.17 GB | 1.54 GB | 3.3 / 8.3 |
+| v4.1-Small, 16 steps | Q5_K | 0.94 GB | 3.0% / 3.2% | 1.07 GB | 1.43 GB | 3.3 / 8.3 |
+| v4.1-Small, 16 steps | Q4_K | 0.86 GB | 4.2% / 3.2% | 1.00 GB | 1.35 GB | 3.4 / 8.5 |
+
+v4-Large, on the same sentences at 16 steps on the M5 on 2026-10-14, with seeds 1, 2 and 3 for the CER and seed 1 for
+the RTFx; the RTX 2080 ran F16 and Q8_0 alone, with seed 1. The name fetches Q8_0, which hears as F16 does in half the
+memory and leaves room on a GPU of 8 GB.
+
+| Type | File | CER, M5 | Peak memory, M5 | VRAM, RTX 2080 | RTFx, M5 / RTX 2080 |
+|---|---|---|---|---|---|
+| F16 | 6.96 GB | 4.5% | 7.2 GB | 7.5 GB | 0.97 / 3.6 |
+| Q8_0 | 3.88 GB | 4.8% | 4.1 GB | 4.4 GB | 0.97 / 3.4 |
+| Q6_K | 3.27 GB | 4.5% | 3.5 GB | | 0.94 |
+| Q5_K | 2.93 GB | 4.9% | 3.2 GB | | 0.94 |
+| Q4_K | 2.62 GB | 5.1% | 2.9 GB | | 1.00 |
 
 ## Speed
 
-speech-bench on 2026-10-08: the 20 sentences of its `prompts/speak-ja-JP.json` in a voice file of one reference, seed
-1, one request at a time through the worker, F16. The CER is of the speech as Qwen3-ASR 1.7B hears it.
+speech-bench on 2026-10-14: the 20 sentences of its `prompts/speak-ja-JP.json` in a voice file of one reference, seeds
+1 and 2, one request at a time through the worker, F16, the medians of three rounds. The RTFx is the seconds of audio
+over the seconds they took, so larger is faster. The CER is of the speech as Qwen3-ASR 1.7B hears it.
 
-| Model | Device | Median first audio | p90 first audio | Real-time factor | CER |
+| Model | Device | Time to first audio, p50 | Time to first audio, p90 | RTFx | CER |
 |---|---|---|---|---|---|
-| v4.1-Small-MF, 4 steps | Apple M5, Metal | 0.25 s | 0.52 s | 0.17 | 6.1% |
-| v4.1-Small, 16 steps | Apple M5, Metal | 1.24 s | 3.40 s | 0.34 | 3.2% |
-| v4.1-Small-MF, 4 steps | RTX 2080, Vulkan | 0.12 s | 0.20 s | 0.07 | 7.1% |
-| v4.1-Small, 16 steps | RTX 2080, Vulkan | 0.52 s | 1.12 s | 0.13 | 3.2% |
+| v4.1-Small-MF, 4 steps | Apple M5, Metal | 0.22 s | 0.45 s | 7.7 | 6.7% |
+| v4.1-Small, 16 steps | Apple M5, Metal | 1.15 s | 3.03 s | 3.5 | 3.2% |
+| v4.1-Small-MF, 4 steps | RTX 2080, Vulkan | 0.12 s | 0.19 s | 18 | 6.4% |
+| v4.1-Small, 16 steps | RTX 2080, Vulkan | 0.52 s | 1.14 s | 8.5 | 3.2% |
 
-The first audio waits for the whole sentence's sampling, so it grows with the sentence. v4.1-Small's default of 40
-steps takes about 2.4 times as long as 16. Over the same 20 sentences on the M5, the worker's memory peaks at 2.06 GB
-with F16 weights and 1.35 GB with Q8_0, which speaks as fast.
+The time to first audio includes the whole sentence's sampling, so it grows with the sentence. With v4.1-Small's
+default of 40 steps, the RTFx on the M5 is 1.8 with F16 weights, the median of five runs on each of three sentences of
+5 to 18 s on the same day.
+
+v4-Large in Q8_0, the same 20 sentences with seed 1 and one round, on 2026-10-14:
+
+| Steps | Device | Time to first audio, p50 | Time to first audio, p90 | RTFx | CER |
+|---|---|---|---|---|---|
+| 16 | Apple M5, Metal | 4.40 s | 14.4 s | 0.97 | 5.8% |
+| 40 | Apple M5, Metal | 10.7 s | 35.5 s | 0.42 | 5.0% |
+| 16 | RTX 2080, Vulkan | 1.24 s | 3.80 s | 3.4 | 5.8% |
+| 40 | RTX 2080, Vulkan | 3.14 s | 10.0 s | 1.4 | 5.0% |
+
+The official runtime takes 36 GB at FP32 on the M5, where its RTFx is 0.31, and runs on the RTX 2080 at BF16 alone, at
+an RTFx of 0.03.

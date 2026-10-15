@@ -30,9 +30,19 @@ need glibc 2.34 and GCC 11's libstdc++ (`GLIBCXX_3.4.29`). GitHub retired its Ub
   so that a file needs no shared library but glibc's and, in the Vulkan build, `libvulkan.so.1`. CI fails a file that
   needs another one. `libspeech.so` carries its own libstdc++ hidden behind `src/api/speech.map`, which is safe because
   no C++ type or exception crosses the C API.
+- **On Windows the C runtime is linked into each file** (`CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`) and ggml's OpenMP
+  is off, so that a file needs no DLL but Windows' own and `vulkan-1.dll`; CI reads each file's DLLs and fails one
+  that needs another. MSVC's OpenMP runtime, `vcomp140.dll`, comes only with the Visual C++ Redistributable, which
+  Windows does not ship.
 - **No CUDA build is released.**
 
 The alternatives were turned down:
+
+- Keeping ggml's OpenMP on Windows and shipping `vcomp140.dll` beside `speech.exe` and `speech.dll`. OpenMP made a model
+  on the CPU 3 to 16% faster on an i9-9900K (reazonspeech-nemo-v2 by beam search 10.6 against 8.9 RTFx, parakeet-tdt
+  0.6b-v3 10.9 against 9.8, Qwen3-TTS 0.6B 0.65 against 0.63, 2026-10-14) and changed nothing beyond noise on the GPU,
+  where the Windows build is meant to run; it would put a file of Microsoft's in every archive and thread the CPU
+  backend on Windows unlike on every other platform.
 
 - Building Linux in a container with an older glibc, such as manylinux_2_28 (glibc 2.28, which would add RHEL 8, Debian
   11 and Ubuntu 20.04). The Vulkan SDK's `glslc` does not run there, so ggml's shaders would need a shader compiler

@@ -14,7 +14,14 @@
 // a later commit with the same file finds it where it is. Nothing in the folder is removed but on request: a file no
 // entry of this release's catalog names is old, and `speech rm --old` removes it.
 
-/** The folder: SPEECH_MODEL_DIR, an absolute path, or speech.cpp/models in the system's cache folder. */
+/**
+ * speech.cpp's folder in the system's cache folder: ~/Library/Caches/speech.cpp on macOS, $XDG_CACHE_HOME/speech.cpp or
+ * ~/.cache/speech.cpp on Linux, and %LOCALAPPDATA%\speech.cpp on Windows. It holds the models unless SPEECH_MODEL_DIR
+ * names another folder, and what the command line keeps of the latest release, wherever the models are.
+ */
+std::filesystem::path cache_dir();
+
+/** The folder: SPEECH_MODEL_DIR, an absolute path, or models in cache_dir(). */
 std::filesystem::path model_dir();
 
 /** Where a file of the catalog is, or goes once fetched. */

@@ -33,8 +33,10 @@
 #include "ggml-cpu.h"
 #include "json-reader.h"
 #include "npy.h"
+#include "qwen3-asr/layout.h"
 #include "qwen3-asr/recognizer.h"
 #include "reference-dumps.h"
+#include "weight-types.h"
 
 using namespace qwen3_asr;
 
@@ -143,6 +145,34 @@ std::vector<int32_t> follow(Decoder & decoder, const Npy & ids, const Npy & top_
     return g.ids;
 }
 
+/**
+ * Decodes greedily from the decoder's prefill with a draft of `draft`, compares each step with the dump's as `greedy`, a
+ * decoding without one, compared, until the first that differs, and checks the steps against the dump as that
+ * decoding's: no choice of ours that the error does not explain, and top logits no more than 12 dB further from the
+ * dump's than its. A step of several rows rounds otherwise than a step of one: on an RTX 2080 with Vulkan, whose
+ * products of several columns quantize their activations to 8 bits, the drafted steps of Qwen3-ASR 0.6B in Q8_0 lay up
+ * to 6.9 dB further from the dump, on an Apple M5's CPU 2.1 dB and on its GPU 0.1 dB; with the rewind one row short,
+ * they lay 21.8 dB further on the M5's GPU (2026-10-15). Prints whether it wrote the ids written without a draft,
+ * `written`.
+ */
+bool drafted(Decoder & decoder, const char * what, const std::vector<int32_t> & draft, const Recognizer & recognizer, bool forced,
+             const Npy & ids, const Npy & top_ids, const Npy & top_logits, const Steps & greedy, const std::vector<int32_t> & written) {
+    Draft d(draft, recognizer.asr_text(), forced);
+    std::vector<std::vector<float>> seen;
+    const std::vector<int32_t> got = decoder.generate([](size_t) { return true; }, &d, &seen)->ids;
+    Steps steps;
+    for (size_t i = 0; i < got.size() && i < (size_t) ids.shape[0]; i++) {
+        if (!steps.add(i, seen.at(i), top_ids, top_logits, ids.i32[i])) break;
+    }
+    const bool close = steps.worst_snr >= greedy.worst_snr - 12;
+    std::printf("  %-32s %zu of %zu steps the dump's, top logits' worst SNR %.1f dB against %.1f without one, %s; %d of %d drafted tokens "
+                "kept in %d steps\n",
+                what, steps.steps - steps.differ, steps.steps, steps.worst_snr, greedy.worst_snr, got == written ? "the ids without one" : "other ids",
+                d.kept, d.checked, d.checks);
+    if (!close) std::printf("    the drafted steps lie more than 12 dB further from the dump than the steps without a draft\n");
+    return close && steps.unexplained == 0;
+}
+
 }  // namespace
 
 int main(int argc, char ** argv) {
@@ -152,6 +182,10 @@ int main(int argc, char ** argv) {
         return 2;
     }
     try {
+        if (!takes_weights(args[1], layout, {"F32", "F16", "Q8_0"},
+                           "its bounds are those measured with them")) {
+            return 2;
+        }
         ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
         std::optional<Qwen3Attention> attention;
         if (args.size() > 4) attention = args[4] == "flash" ? Qwen3Attention::Flash : Qwen3Attention::Products;
@@ -163,7 +197,10 @@ int main(int argc, char ** argv) {
             Decoder & decoder = recognizer.decoder();
             // The stages from the dump's input run with an F32 cache, which leaves the arithmetic of the weights alone;
             // the greedy decodings run as the recognizer does, with its F16 cache.
-            Decoder exact(m, backend, GGML_TYPE_F32, recognizer.decoder().attention());
+            Decoder exact(m, backend, GGML_TYPE_F32, Qwen3Readback::Logits, recognizer.decoder().attention());
+            // The recognizer's decoder reads back only its picks; the greedy decodings follow the logits of one with its
+            // cache, and the recognizer's must pick the first of each step's largest logits.
+            Decoder followed(m, backend, kCacheType, Qwen3Readback::Logits, recognizer.decoder().attention());
             // Measured on an Apple M5 on 2026-10-06, the prompt's last logits from the dumps' input against transformers'
             // float32, over the ten inputs and four requests of the 0.6B and the 1.7B model: with F32 weights 97.4 and
             // 96.1 dB on the CPU, and 43.3 and 46.6 dB on Metal, whose matrix kernel rounds its inputs to half precision,
@@ -264,12 +301,26 @@ int main(int argc, char ** argv) {
 
                     // Greedy from the dump's projector output, the prompt and the embeddings ours.
                     Steps greedy;
+                    followed.prefill(ours, n, [](int64_t) { return true; });
+                    const std::vector<int32_t> written = follow(followed, ids, top_ids, top_logits, greedy);
                     decoder.prefill(ours, n, [](int64_t) { return true; });
-                    const std::vector<int32_t> written = follow(decoder, ids, top_ids, top_logits, greedy);
+                    const bool same_picks = decoder.generate([](size_t) { return true; })->ids == written;
+                    std::printf("  %-32s %s\n", "picks on the device", same_picks ? "the first of the largest logits" : "DIFFER");
+                    ok = ok && same_picks;
                     const std::string greedy_text = recognizer.transcript().parse(recognizer.tokenizer().decode(written), request.language).text;
                     greedy.print("greedy from the projector");
                     std::printf("  %-32s %s\n", "its ids and text", written == ids.i32 ? "the dump's" : greedy_text == text ? "other ids, the dump's text" : "DIFFER");
                     ok = ok && greedy.unexplained == 0 && (greedy.differ > 0 || written == ids.i32);
+
+                    // The same decoding with drafts: its own text, whose every token a step should keep, and that text with
+                    // the second half of its tokens reversed, whose steps must give back the rows they do not keep.
+                    std::vector<int32_t> right = recognizer.tokenizer().encode(greedy_text), wrong = right;
+                    std::reverse(wrong.begin() + (std::ptrdiff_t) (wrong.size() / 2), wrong.end());
+                    for (const auto & [what, draft] : {std::pair<const char *, const std::vector<int32_t> &>{"drafted, its own text", right},
+                                                       {"drafted, half reversed", wrong}}) {
+                        followed.prefill(ours, n, [](int64_t) { return true; });
+                        ok = drafted(followed, what, draft, recognizer, request.language.has_value(), ids, top_ids, top_logits, greedy, written) && ok;
+                    }
 
                     // The text from the audio, every stage ours.
                     std::vector<PartReport> parts;
@@ -296,9 +347,9 @@ int main(int argc, char ** argv) {
                         // The same stages one by one, to find the step where the decoding departs and whether the error
                         // explains it.
                         const std::vector<float> encoded = *recognizer.encoder().encode(recognizer.frontend().features(Frontend::normalize(audio.f32)));
-                        decoder.prefill(decoder.embeddings(prompt, encoded), n, [](int64_t) { return true; });
+                        followed.prefill(decoder.embeddings(prompt, encoded), n, [](int64_t) { return true; });
                         Steps from_audio;
-                        follow(decoder, ids, top_ids, top_logits, from_audio);
+                        follow(followed, ids, top_ids, top_logits, from_audio);
                         from_audio.print("greedy from the audio");
                         ok = ok && from_audio.unexplained == 0;
                     }

@@ -31,8 +31,8 @@ import sys
 import tempfile
 import time
 
-from server_client import Server, expect_error, read_npy
-from worker_client import joined_transcript
+from server_client import Server, expect_error
+from worker_client import joined_transcript, read_npy
 
 args = sys.argv[1:]
 options = args[args.index("--") + 1:] if "--" in args else []

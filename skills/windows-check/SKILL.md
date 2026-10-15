@@ -39,7 +39,7 @@ reaches through whatever remote shell it has.
 
 | What | How | Passes when |
 |---|---|---|
-| Stage checks | `<family>-<stage>-check.exe <model> <dump> … gpu` | within the bounds the check prints |
+| Stage checks | `python checks\run.py <family> --build <checks folder> --devices gpu --models <model> --reference <folder that holds <family>\out>` | every line passes; the summary names the log of each that fails |
 | ggml's fixes | `test-backend-ops.exe` from the checks artifact, built from the submodule's commit: `-o <op> -b Vulkan0` with the op of the fix's cases (`-o MUL_MAT -p large_b` for the q8_1 sums); on a newer upstream tag, the same from a build of the commit of cases alone (ggml-fork skill) | every case passes with the fixes; a case that passes on the tag alone marks a fix to drop once the rest of its "dropped when" holds (ggml-fork skill) |
 | ggml's speed-ups | the same `test-backend-ops.exe`, `-o <op> -b Vulkan0` with the op of the speed-up's cases (`SNAKE_FUSE` for Snake); then the model the speed-up is for, timed as section 4 says | every case passes; the commit message gets the medians, the model, the type and the date |
 | Window or chunk independence | the family's codec check with its forced patterns | every pattern gives the whole decode's samples |

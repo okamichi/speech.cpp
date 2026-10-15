@@ -15,6 +15,7 @@
 #include "fastconformer/layout.h"
 #include "ggml-cpu.h"
 #include "npy.h"
+#include "weight-types.h"
 
 using namespace fastconformer;
 
@@ -25,6 +26,10 @@ int main(int argc, char ** argv) {
         return 2;
     }
     try {
+        if (!takes_weights(args[1], layout, {"F32", "F16"},
+                           "its thresholds are those of float32 and half precision")) {
+            return 2;
+        }
         ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
         std::printf("backend: %s\n", ggml_backend_name(backend));
         bool ok = true;

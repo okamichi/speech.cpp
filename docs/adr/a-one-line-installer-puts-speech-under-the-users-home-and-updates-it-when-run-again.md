@@ -26,7 +26,7 @@ finds no physical device gives the backend no device, so `speech` runs on the CP
   `%LOCALAPPDATA%\Programs\speech.cpp\<version>\`, with the junction `current` beside it, which needs no administrator,
   unlike a symbolic link. A `speech` there that the installer did not make is not replaced.
 - **Running one again updates**: to the latest release, which GitHub's `/releases/latest` names, or to `--version X.Y.Z`
-  (`-Version`). The installed version is kept as it is when it is already that one from the archive this system takes
+  (`-Version`). `speech update` runs it, with `--no-modify-path` (`-NoModifyPath`), for a `speech` it put in place. The installed version is kept as it is when it is already that one from the archive this system takes
   now, which `install.sh` records beside it (`.archive`), so that a Linux CPU build is replaced by the Vulkan build once
   the loader is installed, as its message tells, and the other way round; Windows has one archive, so a version alone
   tells it. The other versions in the folder are removed once the new one is linked; on Windows a version a running

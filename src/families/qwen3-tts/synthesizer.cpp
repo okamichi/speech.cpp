@@ -94,7 +94,7 @@ SynthesisOutcome Synthesizer::synthesize(const SynthesisRequest & r, const Audio
     };
 
     {
-        Timer t{&st.talker};
+        Timer t{&st.prefill};
         // Every frame takes one position of the talker's cache after the prompt's.
         talker_.prefill(prompt.embeds, prompt.n, (int64_t) prompt.n + max_frames);
     }

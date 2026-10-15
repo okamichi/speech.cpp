@@ -58,32 +58,37 @@ Every stage is checked against the official implementation's tensors:
 
 ## Weight types
 
-Each model comes in four types; `NAME:TYPE` fetches one (`speech tts qwen3-tts-0.6b:q6_k`). speech-bench on 2026-10-12,
-on an Apple M5 with Metal: the 20 sentences of its `prompts/speak-ja-JP.json` with `ono_anna` and seeds 1, 2 and 3, as
-Qwen3-ASR 1.7B hears them. The memory is the peak of one request. The CER of one type moves by a few points from seed to
-seed, so only a larger difference, such as the 0.6B model's Q4_K, tells two types apart.
+Each model comes in four types; `NAME:TYPE` fetches one (`speech tts qwen3-tts-0.6b:q6_k`). speech-bench on 2026-10-14,
+two rounds, on an Apple M5 with Metal and an RTX 2080 with Vulkan: the 20 sentences of its `prompts/speak-ja-JP.json`
+with `ono_anna` and seed 1, as Qwen3-ASR 1.7B hears them. The peak memory is the process's on the M5, whose GPU shares
+it, and the VRAM the video memory in use on the RTX 2080. The CER of one type moves by a few points from seed to seed and
+from one machine to the other, so only a larger difference, such as the 0.6B model's Q4_K, tells two types apart.
 
-| Type | 0.6B file | Memory | CER | 1.7B file | Memory | CER |
+| Model | Type | File | CER, M5 / RTX 2080 | Peak memory, M5 | VRAM, RTX 2080 | RTFx, M5 / RTX 2080 |
 |---|---|---|---|---|---|---|
-| Q8_0 | 1.21 GB | 1.37 GB | 6.14% | 2.29 GB | 2.44 GB | 6.25% |
-| Q6_K | 0.99 GB | 1.15 GB | 6.03% | 1.82 GB | 1.98 GB | 4.42% |
-| Q5_K | 0.87 GB | 1.03 GB | 7.35% | 1.57 GB | 1.72 GB | 6.02% |
-| Q4_K | 0.76 GB | 0.92 GB | 13.60% | 1.33 GB | 1.48 GB | 7.19% |
+| 0.6B | Q8_0 | 1.21 GB | 4.3% / 6.0% | 1.37 GB | 1.33 GB | 3.6 / 5.2 |
+| 0.6B | Q6_K | 0.99 GB | 9.3% / 10.3% | 1.15 GB | 1.11 GB | 4.1 / 5.5 |
+| 0.6B | Q5_K | 0.87 GB | 7.8% / 7.0% | 1.03 GB | 0.99 GB | 4.6 / 6.2 |
+| 0.6B | Q4_K | 0.76 GB | 12.8% / 11.0% | 0.92 GB | 0.88 GB | 4.9 / 6.4 |
+| 1.7B | Q8_0 | 2.29 GB | 4.3% / 8.8% | 2.45 GB | 2.41 GB | 2.5 / 4.3 |
+| 1.7B | Q6_K | 1.82 GB | 3.5% / 5.3% | 1.99 GB | 1.94 GB | 2.9 / 4.9 |
+| 1.7B | Q5_K | 1.57 GB | 3.8% / 3.7% | 1.73 GB | 1.69 GB | 3.3 / 5.5 |
+| 1.7B | Q4_K | 1.33 GB | 7.6% / 8.0% | 1.49 GB | 1.45 GB | 3.9 / 5.8 |
 
 ## Speed
 
-speech-bench on 2026-10-08: the 20 sentences of its `prompts/speak-ja-JP.json` with the speaker `ono_anna`, one
-request at a time through the worker, Q8_0. The CER is of the speech as Qwen3-ASR 1.7B hears it.
+speech-bench on 2026-10-14: the 20 sentences of its `prompts/speak-ja-JP.json` with the speaker `ono_anna` and seeds 1
+and 2, one request at a time through the worker, Q8_0, the medians of three rounds. The RTFx is the seconds of audio
+over the seconds they took, so larger is faster. The CER is of the speech as Qwen3-ASR 1.7B hears it.
 
-| Model | Device | Median first audio | p90 first audio | Real-time factor | CER |
+| Model | Device | Time to first audio, p50 | Time to first audio, p90 | RTFx | CER |
 |---|---|---|---|---|---|
-| 0.6B | Apple M5, Metal | 0.038 s | 0.054 s | 0.31 | 5.8% |
-| 1.7B | Apple M5, Metal | 0.060 s | 0.110 s | 0.42 | 3.0% |
-| 0.6B | RTX 2080, Vulkan | 0.031 s | 0.039 s | 0.27 | 8.0% |
-| 1.7B | RTX 2080, Vulkan | 0.039 s | 0.052 s | 0.32 | 2.8% |
+| 0.6B | Apple M5, Metal | 0.035 s | 0.051 s | 3.7 | 6.4% |
+| 1.7B | Apple M5, Metal | 0.057 s | 0.107 s | 2.6 | 4.2% |
+| 0.6B | RTX 2080, Vulkan | 0.024 s | 0.034 s | 5.2 | 6.0% |
+| 1.7B | RTX 2080, Vulkan | 0.032 s | 0.046 s | 4.2 | 6.1% |
 
-On the RTX 2080 the 0.6B model takes 1.6 GB of video memory and the 1.7B 2.7 GB.
-
-The first audio is the first chunk. The 0.6B model often begins its speech with silence, so the voice is heard later:
-on the M5, half a second after the request in the median, from 0.24 s to 0.48 s by speaker and up to 1.9 s. The official
-implementation does the same, 0.89 s in the median over 20 takes of `ono_anna`. The 1.7B model begins with 0.10 s.
+The time to first audio is the time to the first chunk. The 0.6B model often begins its speech with silence, so the
+voice is heard later: on the M5 on 2026-10-08, half a second after the request in the median, from 0.24 s to 0.48 s by
+speaker and up to 1.9 s. The official implementation does the same, 0.89 s in the median over 20 takes of `ono_anna`.
+The 1.7B model begins with 0.10 s.

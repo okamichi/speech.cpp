@@ -17,21 +17,20 @@ a second after the request starts and then at most once a second; the error of a
 when stdin closes; and, where the model takes timestamps, that --timestamps given to the worker is the default of a
 request that does not set it.
 
-The audio goes as 16-bit samples, which move the near-silent input of reference/qwen3-asr/dump.py far enough to change
-the text a forced language makes of it; leave that dump out.
+The texts are the dump's for weights in F32 or F16, and for a quantized file the ones `speech asr` gives for the same
+samples. The audio goes as 16-bit samples, which move the near-silent input of reference/qwen3-asr/dump.py far enough to
+change the text a forced language makes of it; leave that dump out.
 
 usage: python3 checks/smoke/worker_recognition_smoke.py <speech> <model.gguf> <dump folder>... [-- worker options...]
 """
 
 import array
-import ast
 import base64
 import os
-import struct
 import sys
 import time
 
-from worker_client import Worker, dump_requests, short
+from worker_client import Worker, dump_requests, pcm16, read_npy, short
 
 args = sys.argv[1:]
 flags = args[args.index("--") + 1:] if "--" in args else []
@@ -41,6 +40,7 @@ if not dumps:
     raise SystemExit(__doc__)
 w = Worker(speech, model, flags)
 info = w.ready["model"]
+defaults = w.ready["defaults"]
 assert info["task"] == "recognition" and "voices" not in info, short(w.ready)
 w.check_model_information()
 rate = info["sample_rate"]
@@ -48,11 +48,6 @@ options = {o["name"]: o for o in info["options"]}
 timed = {"timestamps": True} if "timestamps" in options else {}
 print(f"ready in {time.perf_counter() - w.started:.2f} s: {info['name']} on {info['device']}, rate {rate}, languages {info['languages']}, "
       f"model information equal to speech info --json")
-
-
-def pcm16(samples):
-    """Float samples as 16-bit little-endian PCM, scaled as the worker scales them back (by 32768)."""
-    return array.array("h", [max(-32768, min(32767, round(x * 32768))) for x in samples]).tobytes()
 
 
 def chunks(id, pcm, size=None):
@@ -67,17 +62,6 @@ def send_audio(id, pcm, **members):
     for c in chunks(id, pcm):
         w.send(c)
     w.send({"type": "transcribe", "id": id, "sample_rate": members.pop("sample_rate", rate), **members})
-
-
-def read_npy(path):
-    with open(path, "rb") as f:
-        data = f.read()
-    header_length = struct.unpack("<H", data[8:10])[0]
-    header = ast.literal_eval(data[10:10 + header_length].decode())
-    assert header["descr"] == "<f4" and len(header["shape"]) == 1, header
-    values = array.array("f")
-    values.frombytes(data[10 + header_length:])
-    return values
 
 
 def check_times(m):
@@ -98,7 +82,7 @@ audio, want_text, want_langs = {}, {}, {}
 for d in dumps:
     name = os.path.basename(os.path.normpath(d))
     audio[name] = pcm16(read_npy(os.path.join(d, "audio.npy")))
-    for request, members, want, want_languages in dump_requests(speech, model, d):
+    for request, members, want, want_languages in dump_requests(speech, model, d, flags):
         # A language the model only checks is sent too, which must change nothing.
         if request == "auto":
             want_text[name], want_langs[name] = want, want_languages
@@ -112,7 +96,7 @@ for d in dumps:
         m = messages[-1]
         assert m["type"] == "end" and m["stop"] == "complete", short(m)
         if m["text"] != want:
-            raise SystemExit(f"{id}: the text differs from the dump's text\n  got  {m['text']}\n  want {want}")
+            raise SystemExit(f"{id}: the text differs from the dump's\n  got  {m['text']}\n  want {want}")
         # A result without a language leaves the member out.
         if m.get("languages", []) != want_languages or m.get("languages") == []:
             raise SystemExit(f"{id}: the languages {m.get('languages')} differ from the ones qwen-asr parsed, {want_languages}")
@@ -125,7 +109,7 @@ for d in dumps:
         # tell whether a progress is due; a run of more than a second ends with one, as done reaches 1.
         if m["_at"] - sent > 2:
             assert progress, f"{id}: a recognition of {m['_at'] - sent:.1f} s sent no progress"
-        print(f"{id} {members}: {seconds:.2f} s, the dump's text and languages {want_languages} in {time.perf_counter() - t1:.3f} s"
+        print(f"{id} {members}: {seconds:.2f} s, the expected text and languages {want_languages} in {time.perf_counter() - t1:.3f} s"
               + (f", {len(m['segments'])} segments and {len(m['tokens'])} tokens joining into it" if timed else "")
               + f", {len(progress)} progress messages")
 
@@ -270,7 +254,7 @@ assert [(m["type"], m["id"]) for m in rest] == [("error", "z")], [short(m) for m
 # gives segments and tokens to a recognition that does not ask for them.
 if timed:
     w = Worker(speech, model, [*flags, "--timestamps"])
-    assert w.ready["defaults"] == {"timestamps": True}, w.ready["defaults"]
+    assert w.ready["defaults"] == defaults | {"timestamps": True}, w.ready["defaults"]
     send_audio("timed", short_pcm)
     m = w.terminal("timed", "end")
     assert m["text"] == short_text and "segments" in m and "tokens" in m, short(m)

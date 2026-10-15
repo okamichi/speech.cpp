@@ -16,8 +16,10 @@
 #include "backend.h"
 #include "compare.h"
 #include "irodori-dumps.h"
+#include "irodori-tts/layout.h"
 #include "irodori-tts/synthesizer.h"
 #include "npy.h"
+#include "weight-types.h"
 
 using namespace irodori;
 
@@ -49,6 +51,10 @@ int main(int argc, char ** argv) {
         return 2;
     }
     try {
+        if (!takes_weights(args[1], model_layout, {"F32", "F16"},
+                           "quantized weights carry the latent and the length further than its bound")) {
+            return 2;
+        }
         ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
         std::printf("backend: %s\n", ggml_backend_name(backend));
         Synthesizer synth(args[1], backend, forced_attention(args, 4));
@@ -101,7 +107,7 @@ int main(int argc, char ** argv) {
             std::printf("%s: %zu samples (official %zu), %d frames\n", name.c_str(), audio.size(), official.f32.size(),
                         stats.frames);
             print_diff("  audio against the official", da);
-            std::printf("  first audio %.3f s: text and duration %.3f s, sampling %.3f s, codec %.3f s in all\n", stats.first_audio,
+            std::printf("  time to first audio %.3f s: text and duration %.3f s, sampling %.3f s, codec %.3f s in all\n", stats.first_audio,
                         stats.text, stats.sampling, stats.codec);
             ok = ok && audio.size() == official.f32.size() && da.snr_db > least_snr_db(name);
         }

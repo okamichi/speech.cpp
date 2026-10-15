@@ -26,7 +26,7 @@ its own. The steps are a request option, `steps`, whose default the file gives: 
 ## Consequences
 
 The catalog names the two `irodori-tts-mf` and `irodori-tts`. A caller chooses between MF's speed and v4.1-Small's
-accuracy and settings: the median first audio over the same 20 sentences is 0.23 s with MF and 1.12 s with v4.1-Small at
+accuracy and settings: the p50 time to first audio over the same 20 sentences is 0.23 s with MF and 1.12 s with v4.1-Small at
 16 steps on an Apple M5 (Metal, F16), and 0.13 s and 0.49 s on an RTX 2080 (Vulkan, F16). Only v4.1-Small takes the
 guidance's options ([the record of the runtime's
 settings](irodori-tts-requests-take-the-runtimes-guidance-schedule-and-tail-settings.md)).

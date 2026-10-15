@@ -78,7 +78,6 @@ add_library(irodoritts STATIC
     src/families/irodori-tts/text-normalizer.cpp
     src/families/irodori-tts/tokenizer.cpp
     src/families/irodori-tts/text-encoder.cpp
-    src/families/irodori-tts/t5gemma-encoder.cpp
     src/families/irodori-tts/layers.cpp
     src/families/irodori-tts/loudness.cpp
     src/families/irodori-tts/codec.cpp
@@ -213,9 +212,12 @@ add_executable(speech-cli
     tools/cli/model.cpp
     tools/cli/models.cpp
     tools/cli/quantize.cpp
+    tools/cli/update.cpp
     tools/catalog/catalog.cpp
     tools/catalog/cache.cpp
+    tools/catalog/curl.cpp
     tools/catalog/fetch.cpp
+    tools/catalog/release.cpp
     tools/catalog/sha256.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/catalog-json.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/page-files.cpp
@@ -298,15 +300,12 @@ target_link_libraries(tokenizer-check PRIVATE qwen3tts qwen3asr)
 
 # The decoder's runs in blocks, on the talker of a Qwen3-TTS file.
 add_executable(qwen3-decoder-check checks/common/qwen3-decoder-check.cpp)
+target_include_directories(qwen3-decoder-check PRIVATE checks)
 target_link_libraries(qwen3-decoder-check PRIVATE qwen3tts)
 
-add_executable(irodori-text-check checks/irodori-tts/irodori-text-check.cpp)
-target_include_directories(irodori-text-check PRIVATE checks)
+add_executable(irodori-text-check checks/irodori-tts/irodori-text-check.cpp tools/common/json-reader.cpp)
+target_include_directories(irodori-text-check PRIVATE checks tools/common)
 target_link_libraries(irodori-text-check PRIVATE irodoritts)
-
-add_executable(irodori-text-stage-check checks/irodori-tts/irodori-text-stage-check.cpp)
-target_include_directories(irodori-text-stage-check PRIVATE checks)
-target_link_libraries(irodori-text-stage-check PRIVATE irodoritts)
 
 add_executable(irodori-compat-check checks/irodori-tts/irodori-compat-check.cpp tools/common/json-reader.cpp)
 target_include_directories(irodori-compat-check PRIVATE checks tools/common)
@@ -380,6 +379,13 @@ target_link_libraries(fastconformer-timing PRIVATE fastconformer)
 add_executable(qwen3-asr-timing measure/qwen3-asr-timing.cpp tools/common/json-reader.cpp)
 target_include_directories(qwen3-asr-timing PRIVATE checks tools/common)
 target_link_libraries(qwen3-asr-timing PRIVATE qwen3asr)
+
+# Times the stages of a synthesis on the texts given.
+add_executable(qwen3-tts-timing measure/qwen3-tts-timing.cpp)
+target_link_libraries(qwen3-tts-timing PRIVATE qwen3tts)
+
+add_executable(irodori-tts-timing measure/irodori-tts-timing.cpp)
+target_link_libraries(irodori-tts-timing PRIVATE irodoritts)
 
 # Silero VAD's stages and regions against the dumps of reference/silero-vad/dump.py, read with the JSON reader of `speech`.
 add_executable(silero-vad-check checks/silero-vad/silero-vad-check.cpp tools/common/json-reader.cpp)

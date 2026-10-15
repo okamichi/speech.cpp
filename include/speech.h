@@ -62,7 +62,7 @@ extern "C" {
  * version and a minor version of m or more. Version 3.0 is first released with speech.cpp 0.7.0, the option prompt
  * included, and a declaration added since says the version that added it.
  */
-#define SPEECH_API_VERSION_MINOR 0
+#define SPEECH_API_VERSION_MINOR 1
 
 /** The SPEECH_API_VERSION_MAJOR the library was built with, for a caller that loads it at run time. */
 SPEECH_API int speech_api_version_major(void);
@@ -406,7 +406,16 @@ typedef enum speech_option {
      * compute in different arithmetic, which can choose another token where two score almost the same. A model on the
      * CPU decodes there either way. Added in 4.0.
      */
-    SPEECH_OPT_DECODE_ON_CPU = 45
+    SPEECH_OPT_DECODE_ON_CPU = 45,
+    /**
+     * "draft", text: what a recognition is likely to write, such as the text of an earlier recognition of the beginning
+     * of the same audio, which live transcription gives each reading of an utterance. A model that takes it checks
+     * several of the draft's tokens in one step of its decoding and keeps those it would have written itself, so that it
+     * writes the text it writes without the draft, in less time where the draft is right and in about the same time
+     * where it is wrong. A step that checks several tokens computes several rows at once, which rounds differently from
+     * a step of one, so that where two tokens score almost the same the draft can choose the other. Added in 4.1.
+     */
+    SPEECH_OPT_DRAFT = 46
 } speech_option;
 
 /** The type of an option's values, which names the setter that takes them. */

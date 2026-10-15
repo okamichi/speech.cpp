@@ -1,5 +1,6 @@
 // Checks the Qwen3 decoder's runs in blocks against a run of the same rows in one graph, on the talker of a Qwen3-TTS
-// model file. The rows are the talker's text embeddings of a text; all but the last 16 go in one run, once in a single
+// model file. The rows are the talker's text embeddings of a text, repeated whole until the rows of the prefill fill
+// more than two blocks, so that a block follows a whole one. All but the last 16 go in one run, once in a single
 // block, as the decoder computed every run before it had blocks, and once in blocks of the given rows. The keys and
 // values the two wrote into their caches are compared position by position in every layer, where a wrong position or
 // mask shows at the rows it touches; then the last 16 rows go one at a time, reading those caches, and their logits
@@ -11,7 +12,8 @@
 // prefill of 5,137 rows of the 0.6B talker in blocks and one in a single block each part from the F32 file's logits by
 // 6e-2 and from each other by 5e-2 (2026-10-06).
 //
-// The two decoders attend as they choose on the device, or as the last argument forces them.
+// The two decoders attend as they choose on the device, or as the last argument forces them; the block rows, which
+// default to the decoder's, may be left out before it.
 //
 // usage: qwen3-decoder-check <qwen3-tts model F32.gguf> <text file> [gpu|cpu] [block rows] [flash|products]
 
@@ -33,6 +35,7 @@
 #include "qwen3-tts/layout.h"
 #include "qwen3-tts/synthesizer.h"
 #include "qwen3-tts/talker.h"
+#include "weight-types.h"
 
 namespace {
 
@@ -75,28 +78,32 @@ struct Worst {
 
 int main(int argc, char ** argv) {
     const std::vector<std::string> args = utf8_args(argc, argv);
-    if (args.size() < 3 || (args.size() > 5 && args[5] != "flash" && args[5] != "products")) {
+    const bool forced = args.size() > 4 && (args.back() == "flash" || args.back() == "products");
+    const size_t positional = args.size() - (forced ? 1 : 0);
+    if (args.size() < 3 || positional > 5) {
         std::fprintf(stderr, "usage: %s <qwen3-tts model F32.gguf> <text file> [gpu|cpu] [block rows] [flash|products]\n", args[0].c_str());
         return 2;
     }
-    ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
-    const int64_t block_rows = args.size() > 4 ? std::stoll(args[4]) : kQwen3BlockRows;
-    std::optional<Qwen3Attention> attention;
-    if (args.size() > 5) attention = args[5] == "flash" ? Qwen3Attention::Flash : Qwen3Attention::Products;
-    const ModelFile model(args[1], backend, qwen3_tts_layout);
-    if (read_identity(model).weight_type != "F32") {
-        std::fprintf(stderr, "%s holds %s weights; give the check an F32 file\n", args[1].c_str(), read_identity(model).weight_type.c_str());
+    if (!takes_weights(args[1], qwen3_tts_layout, {"F32"},
+                       "with quantized weights a row's numbers change with how a graph groups the rows")) {
         return 2;
     }
+    ggml_backend_t backend = init_backend(args.size() > 3 ? args[3] : "");
+    const int64_t block_rows = positional > 4 ? std::stoll(args[4]) : kQwen3BlockRows;
+    std::optional<Qwen3Attention> attention;
+    if (forced) attention = args.back() == "flash" ? Qwen3Attention::Flash : Qwen3Attention::Products;
+    const ModelFile model(args[1], backend, qwen3_tts_layout);
     Talker talker(model, backend);
     std::ifstream f(std::filesystem::u8path(args[2]));
     const std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    const std::vector<int32_t> ids = Qwen2Tokenizer(model, kTextTokenizer).encode(text);
-    const int64_t n = (int64_t) ids.size(), prefill = n - kSteps;
-    if (prefill <= block_rows) {
-        std::fprintf(stderr, "the text has %lld tokens, which leave no second block of %lld rows\n", (long long) n, (long long) block_rows);
+    const std::vector<int32_t> text_ids = Qwen2Tokenizer(model, kTextTokenizer).encode(text);
+    if (text_ids.empty()) {
+        std::fprintf(stderr, "%s holds no text\n", args[2].c_str());
         return 2;
     }
+    std::vector<int32_t> ids;
+    while ((int64_t) ids.size() - kSteps <= 2 * block_rows) ids.insert(ids.end(), text_ids.begin(), text_ids.end());
+    const int64_t n = (int64_t) ids.size(), prefill = n - kSteps;
     const std::vector<float> embeds = talker.text_embeddings(ids);
 
     const Qwen3Shape shape = read_qwen3_shape(model, "qwen3-tts.talker");

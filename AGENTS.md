@@ -35,7 +35,8 @@ README.md and `docs/` are the documentation for users; what a developer needs is
 - `src/common/` holds what two families use in the same role. Code moves there when a second family needs
   it, not before, and never as a framework for families that do not exist yet.
 - `tools/` holds `speech`, the one executable for users, with a subcommand per program: `tts`,
-  `asr`, `vad`, `voice`, `info`, `devices` and `quantize` in `tools/cli/` (with `main.cpp`, which dispatches them), `worker` in
+  `asr`, `vad`, `voice`, `info`, `devices`, `quantize` and `update` in `tools/cli/` (with `main.cpp`, which dispatches
+  them and prints the notice of a newer release on a terminal), `worker` in
   `tools/worker/` and `serve` in `tools/server/`, and what they share in `tools/common/`: the one parser of every
   command line, which makes a flag of each option of the C API's vocabulary, the JSON reader, and the request options
   read from text or JSON and set through the library's setters, transcription by regions, which `asr --vad` and
@@ -45,8 +46,9 @@ README.md and `docs/` are the documentation for users; what a developer needs is
   events (`realtime-events.cpp`), which they all write. Every subcommand reaches the models only through the
   C API. `tools/catalog/` names models: the catalog of the release (`catalog.json`, which `update_catalog.py` writes
   from Hugging Face and the build compiles in), the cache folder, and the fetching of a named model with the system's
-  curl, which `models`, `pull` and `rm` and every subcommand that takes a model share; the library never reaches the
-  network. The worker's protocol is JSON Lines, one JSON object per line on stdin and
+  curl (`curl.cpp` runs it), which `models`, `pull` and `rm` and every subcommand that takes a model share; it also asks
+  github.com for the latest release with the same curl (`release.cpp`), for `update` and the notice. The library never
+  reaches the network. The worker's protocol is JSON Lines, one JSON object per line on stdin and
   stdout, and is the contract of every program that starts it, ASIST among them: stdout carries the protocol and
   nothing else, every log goes to stderr, and every request gets exactly one terminal message. Its `ready` message
   carries the protocol's version, the release and the model's information.
@@ -57,12 +59,21 @@ README.md and `docs/` are the documentation for users; what a developer needs is
   recognition model (`speech-api-recognition.c`), and with `detect`, with a detection model (`speech-api-detection.c`,
   and detections of audio given a piece at a time in `speech-api-detection-stream.c`), what they share in
   `speech-api-common.c` and what differs by the operating system in `speech-api-platform.c`. Checks reach into `src/`
-  for the stage they check; they are built but not released. `checks/compare/` holds the scripts that compare two builds
-  or releases: the audio of the same requests bit for bit (`same_audio.py`), the files `speech quantize` makes with the
-  converters' (`quantize_compare.py`) and the first release that reads each (`quantize_releases.py`).
-- `measure/` holds what measures and passes or fails nothing: the times of Qwen3-ASR's stages (`qwen3-asr-timing.cpp`,
-  built with the checks), of llama.cpp's llama-server on the same audio and of Irodori-TTS with and without a caption,
-  and the accuracy of each longest region of transcription by regions (`region_cap_compare.py`).
+  for the stage they check; they are built but not released. `checks/run.py` runs the stage checks of the families and
+  devices it is given, with the model files and the dumps it finds, in the order data flows, one line per check.
+  `checks/compare/` holds the scripts that compare two builds or releases: the audio of the same requests bit for bit
+  (`same_audio.py`), the files `speech quantize` makes with the converters' (`quantize_compare.py`) and the first
+  release that reads each (`quantize_releases.py`).
+- `measure/` holds what measures and passes or fails nothing: the times of the stages of Qwen3-ASR, FastConformer,
+  Qwen3-TTS and Irodori-TTS (`<family>-timing.cpp`, built with the checks), of llama.cpp's llama-server on Qwen3-ASR's
+  dumps and of Irodori-TTS with and without a caption, the accuracy of each longest region of transcription by regions
+  (`region_cap_compare.py`), and how late live transcription over `/v1/realtime` is for one build or two on the same
+  recordings (`live_latency.py`). speech.cpp keeps what passes or fails (the checks, the smoke scripts and
+  `checks/compare/`) and what measures from inside the library or its entry points: the time of each stage and the
+  delay of live transcription. speech-bench (github.com/nyosegawa/speech-bench) measures what a user sees of a whole
+  request (speed, latency, memory and accuracy) across speech.cpp's builds and other runtimes, and tries a model in its
+  official implementation and the runtimes that already run it before speech.cpp takes it up, so any other comparison
+  of builds or of runtimes goes there and not into `measure/`.
 - `tools/server/` holds `speech serve`, which serves a synthesis, a recognition and a detection model over HTTP with
   OpenAI's audio API (`POST /v1/audio/speech`, `POST /v1/audio/transcriptions`, `GET /v1/models`, `GET /health`)
   and OpenAI's Realtime transcription over a WebSocket at `/v1/realtime`, for programs that speak HTTP. Like the worker
@@ -89,7 +100,7 @@ README.md and `docs/` are the documentation for users; what a developer needs is
   `pins.py`, which pins the checkpoints by revision, the conversion of the official weights to one GGUF file per
   model, and the scripts that run the official implementation to dump reference tensors. Dumps go to
   `reference/<model>/out/`. `reference/resample/` does the same for the resampler of `src/common/`, against
-  torchaudio.
+  torchaudio. `reference/npy_to_wav.py` writes the audio of a dump as a WAVE file.
 
 Keep these boundaries explicit: code does not reach past its module for an operation that belongs to
 another one.
@@ -148,6 +159,8 @@ another one.
 - A Linux release runs on glibc 2.34 and needs no shared library but glibc's and, in the Vulkan build,
   `libvulkan.so.1`; CI fails a build that needs more. It is built on the oldest Ubuntu GitHub
   hosts, with libstdc++ linked in and ggml's OpenMP off.
+- A Windows release needs no DLL but Windows' own and `vulkan-1.dll`; CI fails a build that needs more. It is built
+  with the C runtime linked in and ggml's OpenMP off.
 - Model weights, reference dumps and audio are never committed; `.gitignore` covers `models/`,
   `reference/*/out/`, `*.gguf` and `*.wav`.
 
@@ -183,6 +196,9 @@ another one.
   as data: texts to speak and model output. The one exception is README.ja.md, README.md in Japanese, which says what
   README.md says; a pull request that changes README.md changes README.ja.md the same way.
 - An error message names what failed and what to do.
+- Speed is RTFx, the seconds of audio over the seconds they took, so that larger is faster, as Hugging Face's Open ASR
+  Leaderboard gives it. The other figures take their common names: the time to first audio of a synthesis, the load
+  time, the peak memory, and latencies as p50, p90 and p99. The tools' output and the documentation say them alike.
 
 ## Decisions
 
@@ -196,7 +212,8 @@ comment.
 ## Workflow
 
 - Build with `cmake -B build && cmake --build build -j`, and run the checks the change touches before
-  committing code. A change to the C API or the worker also runs `speech-api-check` and
+  committing code, a family's stage checks with `python3 checks/run.py <family> --devices cpu,gpu`. A change to the C
+  API or the worker also runs `speech-api-check` and
   `checks/smoke/worker_smoke.py` for both synthesis families, and `speech-api-check transcribe` and
   `checks/smoke/worker_recognition_smoke.py` for both recognition families, and `speech-api-check detect` with Silero
   VAD; a change to the server runs `checks/smoke/server_smoke.py`, `checks/smoke/server_realtime_smoke.py` and

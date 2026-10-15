@@ -35,8 +35,9 @@ file of silence gives an empty text, and each form of chunking_strategy it does 
 chunking_strategy is refused with a pointer to the detection model. A detection model alone is listed, and both
 endpoints answer that the server holds no model of their task.
 
-The audio goes as 16-bit samples, which move the near-silent input of reference/qwen3-asr/dump.py far enough to change
-the text a forced language makes of it; leave that dump out.
+The texts are the dump's for weights in F32 or F16, and for a quantized file the ones `speech asr` gives for the same
+samples. The audio goes as 16-bit samples, which move the near-silent input of reference/qwen3-asr/dump.py far enough to
+change the text a forced language makes of it; leave that dump out.
 
 A synthesis model refuses /v1/realtime, whose sessions checks/smoke/server_realtime_smoke.py checks.
 
@@ -56,8 +57,9 @@ import sys
 import tempfile
 import time
 
-from server_client import Server, expect_error, read_npy
-from worker_client import MOST_CER, PARAGRAPH, Worker, cer, check_model_information, dump_requests, heard, speaks_by_sentence
+from server_client import Server, expect_error
+from worker_client import (MOST_CER, PARAGRAPH, Worker, cer, check_model_information, dump_requests, heard, read_npy,
+                           speaks_by_sentence)
 
 args = sys.argv[1:]
 options = args[args.index("--") + 1:] if "--" in args else []
@@ -302,7 +304,7 @@ else:
         name = os.path.basename(os.path.normpath(d))
         samples = read_npy(os.path.join(d, "audio.npy"))
         wav = wav_file(samples, rate)
-        requests = dump_requests(speech, model, d)
+        requests = dump_requests(speech, model, d, options)
         [(_, _, want, _)] = [r for r in requests if r[0] == "auto"]
         if want and not first:
             first = (wav, want, samples)
@@ -329,7 +331,7 @@ else:
         if "timestamps" not in takes:
             expect_error(transcribe(verbose_form, [("file", name + ".wav", wav)]), 400, "unsupported_parameter", "timestamps",
                          f"{name}: a segment granularity to a model without timestamps")
-            print(f"{name}: json and text give the dump's text and stop, and each of its {len(requests)} requests its text, and verbose_json "
+            print(f"{name}: json and text give the expected text and stop, and each of its {len(requests)} requests its text, and verbose_json "
                   f"its text and language ({','.join(requests[0][3]) or 'none'}) without segments")
             continue
         status, _, body = transcribe(verbose_form, [("file", name + ".wav", wav)])
@@ -339,7 +341,7 @@ else:
         assert [s["id"] for s in segments] == list(range(len(segments))) and "".join(s["text"] for s in segments) == want, segments
         assert all(set(s) == {"id", "start", "end", "text"} and 0 <= s["start"] <= s["end"] for s in segments), segments
         others = f"; each of its {len(requests) - 1} other requests its text" if len(requests) > 1 else ""
-        print(f"{name}: json, text and verbose_json give the dump's text and stop, verbose_json no language and {len(segments)} segments joining "
+        print(f"{name}: json, text and verbose_json give the expected text and stop, verbose_json no language and {len(segments)} segments joining "
               f"into it, with or without a segment granularity{others}")
     wav, want, samples = first
     status, _, body = transcribe([], [("file", "x.wav", wav_file([x for x in samples for _ in range(3)], rate * 3))])
@@ -410,7 +412,7 @@ else:
             # a threshold of 1 finds no region, so auto gives an empty text, while a request's own threshold wins.
             tuned = Server(speech, [model, vad, *options, "--vad.threshold", "1"])
             listed = json.loads(tuned.call("GET", "/v1/models")[2])["data"]
-            assert [m["defaults"] for m in listed] == [{}, {"threshold": 1}], listed
+            assert [m["defaults"] for m in listed] == [entry["defaults"], detector["defaults"] | {"threshold": 1}], listed
             status, _, body = tuned.transcribe([("chunking_strategy", "auto")], [("file", "long.wav", long)])
             assert status == 200 and json.loads(body) == {"text": ""}, body
             own = [("chunking_strategy[type]", "server_vad"), ("chunking_strategy[threshold]", "0.5")]

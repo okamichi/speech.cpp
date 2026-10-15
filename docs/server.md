@@ -293,7 +293,8 @@ utterance.
 While an utterance goes on, the server recognizes it again as audio comes, as often as the model keeps up, and the
 deltas carry the beginning that two of these readings in a row agree on. They may stop short of the text, or differ
 from it where a later reading changed its mind: a client shows them while someone speaks and replaces them with the
-completed `transcript`, as it does for OpenAI's `gpt-live-transcribe`.
+completed `transcript`, as it does for OpenAI's `gpt-live-transcribe`. With Qwen3-ASR, each reading and the completed
+`transcript` are given the reading before as their `draft`, which makes them sooner where the text stays the same.
 
 Utterances are transcribed one after another, each in its turn among the server's other transcriptions, taken when it
 is committed. A session holds at most 25 MB of audio not yet transcribed, in its buffer or committed, which is 546 s;

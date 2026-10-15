@@ -60,7 +60,7 @@ The Qwen3-TTS 1.7B files take instructions and the 0.6B files refuse them, and `
 only describes a model, decides it. `qwen3-tts-talker-check` compares the instruction's tokens, the prompt and every
 stage with a dump of the official 1.7B with an instruction and greedy decoding. An Irodori-TTS caption costs, as
 estimated, about 10 ms of ModernBERT and under 5 ms of the DiT's keys over MeanFlow's four steps on an Apple M5 (4 to 6%
-of the median first audio of 0.23 s), and with RF a fourth branch at each guided step, which raises the DiT's work by a
+of the p50 time to first audio of 0.23 s), and with RF a fourth branch at each guided step, which raises the DiT's work by a
 quarter while t ≥ 0.5 and the sampling time by an estimated 10 to 25%; `measure/irodori-caption-timing.py` measures it.
 An Irodori-TTS file of layout 1 refuses instructions, naming the caption's encoder it lacks ([the record of layout
 2](irodori-tts-layout-2-adds-what-new-requests-need-and-layout-1-reads-as-a-file-without-it.md)).

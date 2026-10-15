@@ -5,6 +5,7 @@
  * reference/fastconformer/dump.py or reference/qwen3-asr/dump.py and compares the text with the dump's text byte for
  * byte and the languages with the one qwen-asr parsed, by its tag, or with none for a dump of FastConformer, which
  * writes no language, gives each its tokens and segments with their times where the model takes timestamps,
+ * recognizes the audio of each dump with the dump's text as its draft where the model takes one and compares the text,
  * recognizes each other request of a Qwen3-ASR dump, with its language forced and with its prompt, recognizes the
  * audio with each decoding other than the model's default and compares the text and the languages with those in the
  * dump's folder of the decoding's name, which reference/fastconformer/dump.py --greedy writes for an RNN-T's greedy
@@ -24,7 +25,7 @@
 
 /**
  * What a recognition asks besides its audio: timestamps, and a language, a prompt and a decoding where they are not
- * NULL, and decode_on_cpu where it is 0 or 1 rather than -1.
+ * NULL, decode_on_cpu where it is 0 or 1 rather than -1, and a draft where it is not NULL.
  */
 typedef struct {
     int timestamps;
@@ -32,6 +33,7 @@ typedef struct {
     const char * prompt;
     const char * decoding;
     int decode_on_cpu;
+    const char * draft;
 } Asked;
 
 /**
@@ -70,6 +72,7 @@ static speech_status recognize(speech_model * model, const float * samples, size
         (asked.prompt && speech_request_set_string(r, SPEECH_OPT_PROMPT, asked.prompt) != SPEECH_OK) ||
         (asked.decoding && speech_request_set_string(r, SPEECH_OPT_DECODING, asked.decoding) != SPEECH_OK) ||
         (asked.decode_on_cpu >= 0 && speech_request_set_bool(r, SPEECH_OPT_DECODE_ON_CPU, asked.decode_on_cpu) != SPEECH_OK) ||
+        (asked.draft && speech_request_set_string(r, SPEECH_OPT_DRAFT, asked.draft) != SPEECH_OK) ||
         (progress && speech_request_set_progress(r, record_progress, progress) != SPEECH_OK)) {
         fail("a request's audio or option");
         speech_request_free(r);
@@ -388,6 +391,17 @@ static int check_loaded(speech_model * model, const char * model_path, const cha
         free(text);
         free(languages);
         free(want_languages);
+        // The same audio with the dump's text as its draft, whose tokens the model checks against those it writes.
+        if (speech_model_info_takes(info, SPEECH_OPT_DRAFT)) {
+            Asked drafted = plain;
+            drafted.draft = texts[d];
+            if (recognize(model, audio[d], n, rate, drafted, NULL, &text, NULL, NULL) != SPEECH_OK) return fail("speech_transcribe with a draft");
+            const int same = !strcmp(text, texts[d]);
+            printf("  with its text as the draft: text %s\n", same ? "equal to the dump's" : "DIFFERS");
+            if (!same) printf("    got  %s\n    want %s\n", text, texts[d]);
+            ok = ok && same;
+            free(text);
+        }
         // The other requests of a dump of reference/qwen3-asr/dump.py: its language forced, its prompt, and both.
         static const char * const others[] = {"forced", "auto-prompt", "forced-prompt"};
         for (size_t k = 0; strcmp(folder, dumps[d]) != 0 && k < sizeof others / sizeof others[0]; k++) {

@@ -147,6 +147,11 @@ void apply_options(speech_request * request, const std::vector<RequestOption> & 
     }
 }
 
+void apply_draft(speech_request * request, const speech_model * model, const std::string & draft) {
+    if (draft.empty() || !speech_model_info_takes(model_info(model).get(), SPEECH_OPT_DRAFT)) return;
+    check(speech_request_set_string(request, SPEECH_OPT_DRAFT, draft.c_str()));
+}
+
 std::string options_text(const std::vector<RequestOption> & options) {
     std::string out;
     for (const RequestOption & o : options) {

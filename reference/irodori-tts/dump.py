@@ -4,8 +4,8 @@ usage: uv run python dump.py <mf|rf|anime|large> <out dir> <text> (<reference.wa
                              [--seconds s | --duration-scale x] [--speed x] [--ref-normalize-db x | --no-normalize]
                              [request options]
 
-mf is v4.1-Small-MF with its 4 MeanFlow steps; rf is v4.1-Small with 40 Euler steps and the runtime's
-default guidance (text 3.0 and speaker 5.0, each against a branch without it, while t >= 0.5).
+mf is v4.1-Small-MF with its 4 MeanFlow steps; rf is v4.1-Small and large v4-Large, each with 40 Euler steps and
+the runtime's default guidance (text 3.0 and speaker 5.0, each against a branch without it, while t >= 0.5).
 
 --seconds fixes the length and --duration-scale scales the predicted one, as the runtime's request takes
 them. --speed is OpenAI's speed, which Irodori-TTS-Server divides both by before it calls the runtime;
@@ -17,7 +17,7 @@ joined, and meta.json's "reference" lists them. --ref-normalize-db brings each t
 --ref-embed speaks in a speaker-inversion embedding (a .speaker.safetensors file, the runtime's ref_embed), which
 meta.json names as its "reference" with "embedding" true; its speaker_state is the embedding.
 
-The request options are the C API's names of the runtime's SamplingRequest fields, in kebab-case: for rf
+The request options are the C API's names of the runtime's SamplingRequest fields, in kebab-case: for rf and large
 --cfg-scale-text, --cfg-scale-speaker, --cfg-guidance-mode, --cfg-min-t, --cfg-max-t, --truncation-factor,
 --rescale-k, --rescale-sigma, --speaker-uncond-mode, --sway-coeff (Sway Sampling when not 0),
 --speaker-kv-scale, --speaker-kv-min-t, --speaker-kv-max-layers and --cfg-scale-instructions, and for both
@@ -26,26 +26,27 @@ The request options are the C API's names of the runtime's SamplingRequest field
 model's default for the others.
 
 The official runtime.synthesize() runs once with its stages wrapped, so what is saved is what it computed.
-The finer stages (the text encoder's layers, the speaker encoder, each DiT block of the first step, the
+The finer stages (the text backbone's layers, the speaker encoder, each DiT block of the first step, the
 codec's blocks) are then recomputed from those inputs, and the recomputation is asserted to give the same
 result as synthesize(). Writes <out dir>/*.npy and meta.json:
 
   input_ids            the text's tokens with <s>, [N]; the runtime pads them to 256 and masks the rest
-  text_layers          ModernBERT's hidden states on the N tokens alone: embeddings then each layer, [26, N, 768]
-  text_backbone        ModernBERT's final output on the padded input, [N, 768]
-  text_state           the text condition after the projector and its norm, [N, 512]
+  text_layers          the text backbone's hidden states on the N tokens alone: embeddings then each layer, [26, N, 768]
+                       for ModernBERT-ja and [27, N, 1152] for T5Gemma 2
+  text_backbone        the backbone's final output on the padded input, [N, 768] or [N, 1152]
+  text_state           the text condition after the projector and its norm, [N, 512] or [N, 1280]
   caption_ids          with instructions: the caption's tokens with <s>, [C]; the runtime pads them to 512
-  caption_state        the caption condition after its projector and norm, [C, 512]
+  caption_state        the caption condition after its projector and norm, [C, 512] or [C, 1280]
   ref_wav              one reference as read, mono float32 at 48 kHz
   ref_wav_normalized   the reference at its loudness, -16 LUFS but for the options above
   ref_encoder          the DACVAE encoder's output before the bottleneck, [1024, T], for one reference
   ref_latent           the DACVAE latent (the encoder's mean), [T, 32], of several references joined
-  speaker_encoded      the speaker encoder's output on the latent in patches of 4, [T / 4, 768]
-  speaker_state        after its norm, with the masked mean prepended, [1 + T / 4, 768]
+  speaker_encoded      the speaker encoder's output on the latent in patches of 4, [T / 4, 768] or [T / 4, 1280]
+  speaker_state        after its norm, with the masked mean prepended, [1 + T / 4, 768] or [1 + T / 4, 1280]
   duration_features    the 14 features of the text, [14]
   duration_log_frames  the predictor's log(1 + frames), [1]
   noise                the sampler's draw of noise, before a truncation factor scales it, [S, 32]
-  speaker_noise        rf with speaker_uncond_mode noise: the draw after it, [1 + T / 4, 768]
+  speaker_noise        rf with speaker_uncond_mode noise: the draw after it, [1 + T / 4, 768] or [1 + T / 4, 1280]
   speaker_uncond       the same, scaled by the speaker condition's spread: the branch without the speaker
   dit_t                each step's time, [steps]
   dit_delta            mf: each step's interval, [steps]
@@ -54,8 +55,8 @@ result as synthesize(). Writes <out dir>/*.npy and meta.json:
                        condition each leaves out (text, speaker, or all for the joint guidance)
   dit_velocity         the velocity of each step, after guidance and rescaling for rf, [steps, S, 32]
   dit_x                the latent after each step, [steps, S, 32]
-  dit_step0_blocks     the output of each DiT block in the first step, [12, branches, S, 1280]
-  dit_cond             the timestep condition of each step, [steps, 3840]
+  dit_step0_blocks     the output of each DiT block in the first step, [12, branches, S, 1280] or [24, branches, S, 2048]
+  dit_cond             the timestep condition of each step, [steps, 3840] or [steps, 6144]
   codec_in             the codec input after its bottleneck projection, [1024, S]
   codec_conv_in        after the first convolution, [1536, S]
   codec_block{0..3}    after each upsampling block, [channels, samples so far]

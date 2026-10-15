@@ -125,9 +125,10 @@ std::unique_ptr<utterances::Reservation> Session::Reader::reserve(const utteranc
 
 std::optional<Transcript> Session::Reader::transcribe(utterances::Reservation & reservation, const utterances::Asked & asked,
                                                       std::vector<float> samples, int, Cancellation & cancellation, uint64_t utterance,
-                                                      bool provisional) {
+                                                      bool provisional, const std::string & draft) {
     // A reading of an utterance that is not yet announced, which the detection may still drop, takes no item.
-    return models_.transcribe(reservation, std::move(samples), asked.options, cancellation, provisional ? "" : events_.item(utterance), provisional);
+    return models_.transcribe(reservation, std::move(samples), asked.options, cancellation, provisional ? "" : events_.item(utterance), provisional,
+                              draft);
 }
 
 Session::Session(Models & models, std::function<void(const std::string &)> send, size_t limit, const std::string & model)

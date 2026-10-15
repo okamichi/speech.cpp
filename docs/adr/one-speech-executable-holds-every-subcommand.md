@@ -10,8 +10,8 @@ stdout, which also carries a program's output: a WAVE file, JSON, the worker's p
 
 ## Decision
 
-- **One executable, `speech`, with a subcommand per program**: `tts`, `asr`, `voice`, `info`, `devices`, `models`,
-  `pull`, `rm`, `quantize`, `serve` and `worker`. It has the library and ggml linked in statically, so that a release is
+- **One executable, `speech`, with a subcommand per program**: `tts`, `asr`, `vad`, `voice`, `info`, `devices`,
+  `models`, `pull`, `rm`, `quantize`, `update`, `serve` and `worker`. It has the library and ggml linked in statically, so that a release is
   `speech` beside the shared library `libspeech` and the header.
 - **One parser reads every command line.** Every option of the C API's vocabulary is a flag of its own name in
   kebab-case, so that an option the library adds is a flag without the parser or a subcommand changing; a boolean flag

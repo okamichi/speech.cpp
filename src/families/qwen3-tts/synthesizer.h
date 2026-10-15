@@ -34,9 +34,9 @@ struct SynthesisOutcome {
     bool ended = false;
 };
 
-/** Where the time of one synthesis went, in seconds. */
+/** Where the time of one synthesis went, in seconds: the talker's prefill of the prompt, and its steps apart. */
 struct SynthesisStats {
-    double prompt = 0, talker = 0, code_predictor = 0, codec = 0;
+    double prompt = 0, prefill = 0, talker = 0, code_predictor = 0, codec = 0;
 };
 
 /** The prefix of the keys of a model file that hold the text's tokenizer. */

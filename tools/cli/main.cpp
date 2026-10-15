@@ -1,7 +1,9 @@
 // speech: speech synthesis, speech recognition and the detection of speech with every model speech.cpp runs, through
 // its C API, as one executable with a subcommand per program: tts, asr and vad for the command line, voice, info and
 // devices about models and devices, models, pull and rm about the models it fetches by name, quantize to write a model file in another
-// weight type, serve for OpenAI's audio API over HTTP and worker for JSON Lines on stdin and stdout.
+// weight type, update to install the latest release, serve for OpenAI's audio API over HTTP and worker for JSON Lines on
+// stdin and stdout. On a terminal, the subcommands for people say on stderr when a later release is out, unless
+// SPEECH_NO_UPDATE_CHECK is set; the worker never does.
 //
 // usage: speech <subcommand> [options]     speech <subcommand> --help     speech --version
 //
@@ -12,6 +14,7 @@
 
 #include <cstdio>
 #include <exception>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,12 +26,13 @@
 #include "args.h"
 #include "commands.h"
 #include "take-stdout.h"
+#include "update.h"
 
 namespace {
 
 std::vector<Command> commands() {
     return {tts_command(), asr_command(), vad_command(), voice_command(), info_command(), devices_command(), models_command(), pull_command(), rm_command(),
-            quantize_command(), serve_command(), worker_command()};
+            quantize_command(), update_command(), serve_command(), worker_command()};
 }
 
 std::string overview() {
@@ -71,9 +75,12 @@ int run(const std::vector<std::string> & args, FILE * out) {
         std::fputs(command_help(*command).c_str(), out);
         return 0;
     }
+    std::optional<NewerReleaseNotice> notice;
+    int status = 0;
     try {
         const CommandLine line = parse_command_line(*command, rest);
-        return command->run(line, out);
+        notice.emplace(command->release_notice);
+        status = command->run(line, out);
     } catch (const UsageError & e) {
         std::fprintf(stderr, "speech: %s\nRun speech %s --help for its usage and options.\n", e.what(), command->name.c_str());
         if (command->report) command->report(Failure(speech_status_name(SPEECH_ERROR_INVALID_ARGUMENT), "", e.what()), out);
@@ -81,13 +88,17 @@ int run(const std::vector<std::string> & args, FILE * out) {
     } catch (const Failure & e) {
         report(e);
         if (command->report) command->report(e, out);
-        return 1;
+        status = 1;
     } catch (const std::exception & e) {
         const Failure internal(speech_status_name(SPEECH_ERROR_INTERNAL), "", e.what());
         report(internal);
         if (command->report) command->report(internal, out);
-        return 1;
+        status = 1;
     }
+    // The subcommand's output is flushed first, so that a notice on a terminal comes after it.
+    std::fflush(out);
+    if (notice) notice->ended();
+    return status;
 }
 
 }  // namespace
