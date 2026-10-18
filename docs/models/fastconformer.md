@@ -75,8 +75,8 @@ parakeet-tdt-0.6b-v3's WER in F16 on 300 English utterances of FLEURS is 8.76% o
 
 ## Weight types
 
-Each model comes in five types; `NAME:TYPE` fetches one (`speech asr parakeet-tdt-0.6b-v3:q8_0`). speech-bench on
-2026-10-14, two rounds, on an Apple M5 with Metal and an RTX 2080 with Vulkan. The error is the CER on the first 500
+Each model comes in five types; `NAME:TYPE` fetches one (`speech asr parakeet-tdt-0.6b-v3:q8_0`). speech-bench, two
+rounds, on an Apple M5 with Metal on 2026-10-16 and an RTX 2080 with Vulkan on 2026-10-14. The error is the CER on the first 500
 utterances of Common Voice 8.0's Japanese test set, on which the CER is higher than on the whole set, and after the
 slash the CER accepting other spellings of the same words; for parakeet-tdt-0.6b-v3 it is the WER on 300 English
 utterances of FLEURS. The error is the M5's, and the RTX 2080's is within 0.05 points of it. The peak memory is the
@@ -84,37 +84,37 @@ process's on the M5, whose GPU shares it, and the VRAM the video memory in use o
 
 | Model | Type | File | Error | Peak memory, M5 | VRAM, RTX 2080 | RTFx, M5 / RTX 2080 |
 |---|---|---|---|---|---|---|
-| parakeet-tdt_ctc-0.6b-ja | F16 | 1.24 GB | 9.09% / 2.37% | 1.35 GB | 1.32 GB | 79 / 69 |
-| parakeet-tdt_ctc-0.6b-ja | Q8_0 | 0.66 GB | 9.14% / 2.35% | 0.77 GB | 0.74 GB | 85 / 76 |
-| parakeet-tdt_ctc-0.6b-ja | Q6_K | 0.51 GB | 9.08% / 2.48% | 0.63 GB | 0.60 GB | 80 / 80 |
-| parakeet-tdt_ctc-0.6b-ja | Q5_K | 0.43 GB | 8.74% / 2.35% | 0.55 GB | 0.52 GB | 78 / 72 |
-| parakeet-tdt_ctc-0.6b-ja | Q4_K | 0.36 GB | 9.30% / 2.47% | 0.47 GB | 0.44 GB | 82 / 77 |
-| reazonspeech-nemo-v2, beam search | F16 | 1.24 GB | 14.12% / 7.14% | 1.41 GB | 1.34 GB | 43 / 28 |
-| reazonspeech-nemo-v2, beam search | Q8_0 | 0.66 GB | 14.16% / 7.14% | 0.83 GB | 0.75 GB | 55 / 35 |
-| reazonspeech-nemo-v2, beam search | Q6_K | 0.51 GB | 13.92% / 6.98% | 0.69 GB | 0.61 GB | 53 / 34 |
-| reazonspeech-nemo-v2, beam search | Q5_K | 0.43 GB | 13.97% / 7.07% | 0.60 GB | 0.53 GB | 53 / 34 |
-| reazonspeech-nemo-v2, beam search | Q4_K | 0.36 GB | 14.19% / 7.11% | 0.53 GB | 0.45 GB | 54 / 34 |
-| parakeet-tdt-0.6b-v3 | F16 | 1.26 GB | 8.76% | 1.39 GB | 1.45 GB | 88 / 85 |
-| parakeet-tdt-0.6b-v3 | Q8_0 | 0.67 GB | 9.04% | 0.82 GB | 0.86 GB | 97 / 101 |
-| parakeet-tdt-0.6b-v3 | Q6_K | 0.52 GB | 8.87% | 0.67 GB | 0.72 GB | 102 / 103 |
-| parakeet-tdt-0.6b-v3 | Q5_K | 0.44 GB | 9.12% | 0.58 GB | 0.63 GB | 96 / 102 |
-| parakeet-tdt-0.6b-v3 | Q4_K | 0.36 GB | 9.51% | 0.50 GB | 0.56 GB | 98 / 102 |
+| parakeet-tdt_ctc-0.6b-ja | F16 | 1.24 GB | 9.09% / 2.37% | 1.35 GB | 1.32 GB | 105 / 69 |
+| parakeet-tdt_ctc-0.6b-ja | Q8_0 | 0.66 GB | 9.14% / 2.35% | 0.78 GB | 0.74 GB | 131 / 76 |
+| parakeet-tdt_ctc-0.6b-ja | Q6_K | 0.51 GB | 9.08% / 2.48% | 0.63 GB | 0.60 GB | 125 / 80 |
+| parakeet-tdt_ctc-0.6b-ja | Q5_K | 0.43 GB | 8.79% / 2.35% | 0.55 GB | 0.52 GB | 120 / 72 |
+| parakeet-tdt_ctc-0.6b-ja | Q4_K | 0.36 GB | 9.26% / 2.48% | 0.47 GB | 0.44 GB | 132 / 77 |
+| reazonspeech-nemo-v2, beam search | F16 | 1.24 GB | 14.12% / 7.14% | 1.41 GB | 1.34 GB | 49 / 28 |
+| reazonspeech-nemo-v2, beam search | Q8_0 | 0.66 GB | 14.17% / 7.15% | 0.84 GB | 0.75 GB | 75 / 35 |
+| reazonspeech-nemo-v2, beam search | Q6_K | 0.51 GB | 13.91% / 6.98% | 0.69 GB | 0.61 GB | 74 / 34 |
+| reazonspeech-nemo-v2, beam search | Q5_K | 0.43 GB | 13.96% / 7.06% | 0.61 GB | 0.53 GB | 70 / 34 |
+| reazonspeech-nemo-v2, beam search | Q4_K | 0.36 GB | 14.20% / 7.10% | 0.53 GB | 0.45 GB | 75 / 34 |
+| parakeet-tdt-0.6b-v3 | F16 | 1.26 GB | 8.76% | 1.40 GB | 1.45 GB | 132 / 85 |
+| parakeet-tdt-0.6b-v3 | Q8_0 | 0.67 GB | 9.04% | 0.82 GB | 0.86 GB | 165 / 101 |
+| parakeet-tdt-0.6b-v3 | Q6_K | 0.52 GB | 8.87% | 0.67 GB | 0.72 GB | 159 / 103 |
+| parakeet-tdt-0.6b-v3 | Q5_K | 0.44 GB | 9.15% | 0.58 GB | 0.63 GB | 153 / 102 |
+| parakeet-tdt-0.6b-v3 | Q4_K | 0.36 GB | 9.51% | 0.52 GB | 0.56 GB | 166 / 102 |
 
 In the Q6_K, Q5_K and Q4_K files the prediction network and the joint stay Q8_0.
 
 ## Speed
 
-speech-bench on 2026-10-14, one request at a time, with the files the names fetch: Q8_0 for parakeet-tdt_ctc-0.6b-ja
-and reazonspeech-nemo-v2 on the 4,483 utterances of Common Voice 8.0's Japanese test set (4,479 kept by VAD), one round,
-and F16 for parakeet-tdt-0.6b-v3 on 300 English utterances of FLEURS (299 kept), the medians of three rounds. The RTFx
+speech-bench, on the M5 on 2026-10-16 and the RTX 2080 on 2026-10-14, one request at a time, with the files the
+names fetch: Q8_0 for parakeet-tdt_ctc-0.6b-ja and reazonspeech-nemo-v2 on the 4,483 utterances of Common Voice 8.0's
+Japanese test set (4,479 kept by VAD), one round, and F16 for parakeet-tdt-0.6b-v3 on 300 English utterances of FLEURS (299 kept), the medians of three rounds. The RTFx
 is the seconds of audio over the seconds they took, so larger is faster.
 
 | Model | Utterances | p50 latency, M5 / RTX 2080 | p90 latency, M5 / RTX 2080 | RTFx, M5 / RTX 2080 |
 |---|---|---|---|---|
-| parakeet-tdt_ctc-0.6b-ja | Common Voice ja | 0.045 s / 0.050 s | 0.059 s / 0.076 s | 86 / 76 |
-| reazonspeech-nemo-v2, beam search | Common Voice ja | 0.063 s / 0.092 s | 0.097 s / 0.179 s | 58 / 36 |
-| reazonspeech-nemo-v2, greedy | Common Voice ja | 0.050 s / 0.043 s | 0.071 s / 0.083 s | 74 / 73 |
-| parakeet-tdt-0.6b-v3 | FLEURS en | 0.077 s / 0.095 s | 0.126 s / 0.125 s | 94 / 86 |
+| parakeet-tdt_ctc-0.6b-ja | Common Voice ja | 0.027 s / 0.050 s | 0.036 s / 0.076 s | 137 / 76 |
+| reazonspeech-nemo-v2, beam search | Common Voice ja | 0.046 s / 0.092 s | 0.076 s / 0.179 s | 76 / 36 |
+| reazonspeech-nemo-v2, greedy | Common Voice ja | 0.033 s / 0.043 s | 0.049 s / 0.083 s | 108 / 73 |
+| parakeet-tdt-0.6b-v3 | FLEURS en | 0.058 s / 0.095 s | 0.091 s / 0.125 s | 130 / 86 |
 
 A long recording is recognized whole. ReazonSpeech and parakeet-tdt_ctc-0.6b-ja use global attention, whose memory
 grows with the square of the input length. Use `speech asr --vad silero-vad` to transcribe long recordings by region.

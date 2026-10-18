@@ -171,15 +171,17 @@ def check_tasks():
 
 
 def check_voice(wav):
-    """A voice made from a recording, added to a synthesis model that takes voice files and refused by another."""
+    """A voice made from a recording, added to a synthesis model that takes recordings and refused by another."""
     boundary = uuid.uuid4().hex
     form = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\nsmoke\r\n--{boundary}\r\nContent-Disposition: form-data; "
             f"name=\"file\"; filename=\"x.wav\"\r\n\r\n").encode() + wav + f"\r\n--{boundary}--\r\n".encode()
     got = call("POST", "/speech/voices", form, {"Content-Type": f"multipart/form-data; boundary={boundary}"})
-    if info["synthesis"]["voice_files"]:
+    if info["synthesis"]["voice_recordings"]:
         assert got[0] == 200 and "smoke" in [v["name"] for v in json.loads(got[2])["held"]["model"]["voices"]], got[2][:300]
         info["synthesis"] = json.loads(got[2])["held"]["model"]
         print(f"a voice made from a recording added to {info['synthesis']['name']}")
+    elif info["synthesis"]["voice_files"]:
+        expect_error(got, 400, "invalid_value", "path", f"a recording for {info['synthesis']['name']}, which takes voice files alone")
     else:
         expect_error(got, 400, "unsupported_parameter", None, f"a voice for {info['synthesis']['name']}, which takes no voice files")
 
@@ -389,6 +391,11 @@ assert status == 404 and headers["content-type"].startswith("text/html") and b"1
 expect_error(elsewhere.call("GET", "/speech/models", headers={"Authorization": "Bearer " + "0" * 32}), 404, "page_off", None,
              "/speech/models on 0.0.0.0")
 assert elsewhere.call("GET", "/v1/models")[0] == 200
+voices = info["synthesis"]["voices"]
+said = elsewhere.post_json("/v1/audio/speech", {"input": "明日の東京は晴れです。", "seed": 5} | ({"voice": voices[0]["name"]} if voices else {}))
+assert said[0] == 200, said[2][:200]
+# A server that listens for other machines names the client in the line of each request, one a model ran among them.
+elsewhere.wait_for_line(lambda line: line.startswith("POST /v1/audio/speech ") and "from 127.0.0.1" in line, "a speech naming its client")
 elsewhere.stop()
 print("on 0.0.0.0: no page address printed, the page saying how to reach it, and its endpoints off")
 shutil.rmtree(folder)

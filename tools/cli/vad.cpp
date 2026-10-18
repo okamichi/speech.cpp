@@ -14,6 +14,7 @@
 #include "fetch.h"
 #include "json.h"
 #include "regions.h"
+#include "terminal.h"
 #include "wave-input.h"
 
 // speech vad: finds where someone speaks in WAVE files and writes each file's regions to stdout in the order the files
@@ -70,16 +71,18 @@ int run_vad(const CommandLine & line, FILE * out) {
 
     // A model named for the first time is fetched here, before the load is timed.
     const std::string path = model_file(line.args[0]);
+    require_options(path, line);
     const auto t0 = Clock::now();
     // The device and threads of every other detection, unless the command line names its own.
     Loading loading = line.loading(false);
     const Loading usual = detection_loading(loading);
     if (!loading.device) loading.device = usual.device;
     if (!loading.threads) loading.threads = usual.threads;
+    terminal::Status status("Loading " + argument_label(line.args[0]));
     const Model model = load_model(path, loading);
     const ModelInfo info = model_info(model.get());
     const speech_model_info * m = info.get();
-    std::fprintf(stderr, "load time %.2f s: %s on %s\n", seconds_since(t0), speech_model_info_name(m), speech_model_info_device(m));
+    status.done(loaded_line({m}, seconds_since(t0)));
     if (line.has("-v")) std::fprintf(stderr, "speech.cpp %s, %d Hz\n", speech_version(), speech_model_info_sample_rate(m));
     const std::optional<std::string> split = line.value("--split");
     if (split) {
@@ -104,16 +107,20 @@ int run_vad(const CommandLine & line, FILE * out) {
         int rate = 0;
         double audio = 0;
         const auto start = Clock::now();
-        try {
-            const Wav wav = read_audio(path);
-            samples = wav.mono();
-            rate = wav.sample_rate;
-            audio = (double) samples.size() / rate;
-            const Request request = detection_request(model.get(), samples, rate, line.options);
-            Cancellation never;
-            regions = *detect_regions(request.get(), never);
-        } catch (const Failure & e) {
-            throw Failure(e.code(), e.option(), path + ": " + e.what());
+        {
+            // The line is erased before the regions reach stdout, which may be the same terminal.
+            const terminal::Status status("Detecting speech in " + path);
+            try {
+                const Wav wav = read_audio(path);
+                samples = wav.mono();
+                rate = wav.sample_rate;
+                audio = (double) samples.size() / rate;
+                const Request request = detection_request(model.get(), samples, rate, line.options);
+                Cancellation never;
+                regions = *detect_regions(request.get(), never);
+            } catch (const Failure & e) {
+                throw Failure(e.code(), e.option(), path + ": " + e.what());
+            }
         }
         const double took = seconds_since(start);
         const size_t n = regions.size();
@@ -143,12 +150,16 @@ int run_vad(const CommandLine & line, FILE * out) {
         }
         if (format == "json") std::fprintf(out, "%s]}\n", json.c_str());
         std::fflush(out);
-        std::fprintf(stderr, "%s: %.2f s of audio in %.3f s, RTFx %.0f, %zu region%s\n", path.c_str(), audio, took, audio / took, n, n == 1 ? "" : "s");
+        char said[128];
+        std::snprintf(said, sizeof said, "%.2f s of audio in %.3f s, RTFx %.0f, %zu region%s", audio, took, audio / took, n, n == 1 ? "" : "s");
+        std::fprintf(stderr, "%s\n", terminal::marked(terminal::Mark::Done, path + ": " + terminal::paint(terminal::Color::Gray, said)).c_str());
         audio_total += audio;
         busy += took;
     }
     if (line.args.size() > 2) {
-        std::fprintf(stderr, "%zu files, %.2f s of audio in %.3f s, RTFx %.0f\n", line.args.size() - 1, audio_total, busy, audio_total / busy);
+        char said[128];
+        std::snprintf(said, sizeof said, "%zu files, %.2f s of audio in %.3f s, RTFx %.0f", line.args.size() - 1, audio_total, busy, audio_total / busy);
+        std::fprintf(stderr, "%s\n", terminal::marked(terminal::Mark::Done, said).c_str());
     }
     return 0;
 }

@@ -6,10 +6,12 @@ threads and the voices of --add-voice), info and count_tokens, also answered whi
 reported and repeats it too; cancels while a request waits, while it runs, of an unknown id, and after an end, whose id
 a later request then reuses; a second request under an id in flight; each error with its code and option (members the
 message does not have, values of the wrong type, out of range or not taken, a missing text, lines that are not JSON
-objects or have no id or type, the other task's messages); chunks to a synthesis model; add_voice; for
+objects or have no id or type, the other task's messages); chunks to a synthesis model; add_voice, and a recording
+refused by a model that takes voice files alone; for
 Irodori-TTS a fixed length, the progress of a long sampler, a paragraph past what one request speaks spoken in one
-synthesize, whose reported seed repeats it, and a run with no place to cut refused, naming it, and for Qwen3-TTS a text
-past its tokens refused, max_seconds and the sampling options, and an instruction where the model takes one and its
+synthesize, whose reported seed repeats it, and a run with no place to cut refused, naming it, for Drama 3 max_seconds,
+the sampling options' ranges and a paragraph of several of its chunks spoken in one synthesize, and for Qwen3-TTS a
+text past its tokens refused, max_seconds and the sampling options, and an instruction where the model takes one and its
 refusal where it does not; and that a request option given to the worker as a flag is the default of a request that
 does not set it, while one the model does not take or out of its range ends the worker with fatal. Writes the first
 answer to a WAV.
@@ -20,8 +22,10 @@ usage: python3 checks/smoke/worker_smoke.py <out.wav> <speech> <model.gguf> [wor
 
 import base64
 import json
+import os
 import subprocess
 import sys
+import tempfile
 import time
 import wave
 
@@ -39,6 +43,7 @@ rate = info["sample_rate"]
 voice = added[0][0] if added else info["voices"][0]["name"]
 own = [v["name"] for v in info["voices"]][: len(info["voices"]) - len(added)]
 irodori = info["architecture"] == "irodori-tts"
+drama3 = info["architecture"] == "drama3"
 print(f"ready in {time.perf_counter() - w.started:.2f} s: {info['name']} on {info['device']}, protocol {ready['protocol']}, speech.cpp {ready['version']}, "
       f"{len(info['voices'])} voices, model information equal to speech info --json")
 
@@ -206,6 +211,22 @@ if irodori:
                      "instructions")
     print("k, g and none: the runtime's settings the file declares were taken, and settings without effect and a caption past the "
           "file's longest refused")
+elif drama3:
+    expect_error({"type": "synthesize", "id": "e12", "text": "あ。", "voice": voice, "speed": 1.5}, "unsupported", "speed")
+    expect_error({"type": "synthesize", "id": "e13", "text": "あ。", "voice": voice, "seconds": 2}, "unsupported", "seconds")
+    expect_error({"type": "synthesize", "id": "e14", "text": "あ。", "voice": voice, "steps": 4}, "unsupported", "steps")
+    pcm, end = speak("s", text=LONG, max_seconds=0.5)
+    assert end["stop"] == "max_seconds" and end["samples"] <= 0.5 * rate, short(end)
+    print(f"s: max_seconds 0.5 stopped it at {end['samples'] / rate:.3f} s ({end['stop']})")
+    expect_error({"type": "synthesize", "id": "e15", "text": "あ。", "voice": voice, "temperature": 1e-50}, "out_of_range", "temperature")
+    expect_error({"type": "synthesize", "id": "e16", "text": "あ。", "voice": voice, "top_k": 0}, "out_of_range", "top_k")
+    expect_error({"type": "synthesize", "id": "e17", "text": "あ。", "voice": voice, "top_p": 1.5}, "out_of_range", "top_p")
+    expect_error({"type": "synthesize", "id": "e19", "text": "あ。", "voice": voice, "do_sample": False}, "unsupported", "do_sample")
+    # A paragraph of more bytes than a chunk takes is spoken in one synthesize, chunk after chunk.
+    paragraph = "".join(PARAGRAPH[:6])
+    pcm, end = speak("pa", text=paragraph, seed=5)
+    assert end["stop"] == "complete" and end["samples"] > 12 * rate, short(end)
+    print(f"pa: a paragraph of {len(paragraph.encode())} bytes gave {end['samples'] / rate:.1f} s in one synthesize ({end['stop']})")
 else:
     expect_error({"type": "synthesize", "id": "e12", "text": "あ。", "voice": voice, "speed": 1.5}, "unsupported", "speed")
     expect_error({"type": "synthesize", "id": "e13", "text": "あ。", "voice": voice, "seconds": 2}, "unsupported", "seconds")
@@ -257,6 +278,15 @@ if info["voice_files"]:
     speak("v-speak", text="あ。")
     expect_error({"type": "add_voice", "id": "v2", "name": "added", "path": path}, "invalid_argument", "name")
     expect_error({"type": "add_voice", "id": "v3", "name": "other", "path": "/no/such/voice.gguf"}, "io", "path")
+    if not info["voice_recordings"]:
+        with tempfile.TemporaryDirectory() as folder:
+            recording = os.path.join(folder, "recording.wav")
+            with wave.open(recording, "wb") as f:
+                f.setnchannels(1)
+                f.setsampwidth(2)
+                f.setframerate(rate)
+                f.writeframes(bytes(2 * rate))
+            expect_error({"type": "add_voice", "id": "v4", "name": "other", "path": recording}, "invalid_argument", "path")
     print("add_voice: the voice was added, info lists it, and a synthesis speaks with it")
 else:
     expect_error({"type": "add_voice", "id": "v", "name": "x", "path": "x.wav"}, "unsupported", None)

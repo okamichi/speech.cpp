@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <stdexcept>
 
+#include "spelling.h"
+#include "terminal.h"
+
 namespace {
 
 const Flag * find_flag(const Command & command, const std::string & name) {
@@ -24,6 +27,25 @@ bool option_of_flag(const std::string & name, speech_option & option) {
         }
     }
     return false;
+}
+
+/** "; did you mean --voice?" where `name` is a slip of one of the subcommand's flags, or "". */
+std::string meant(const Command & command, const std::string & name) {
+    std::vector<std::string> flags = {"--help"};
+    for (const Flag & f : command.flags) flags.push_back(f.name);
+    if (command.request_options) {
+        for (speech_option o : vocabulary()) flags.push_back(option_flag(o));
+    }
+    // A flag with a task's prefix is compared with the flags of that prefix.
+    const size_t dot = name.find('.');
+    if (command.task_options && dot != std::string::npos) {
+        flags.clear();
+        for (speech_task t : {SPEECH_TASK_SYNTHESIS, SPEECH_TASK_RECOGNITION, SPEECH_TASK_DETECTION}) {
+            for (speech_option o : vocabulary()) flags.push_back(std::string("--") + task_prefix(t) + "." + option_flag(o).substr(2));
+        }
+    }
+    const std::string near = nearest(name, flags);
+    return near.empty() ? "" : "; did you mean " + near + "?";
 }
 
 std::string padded(const std::string & s, size_t width) {
@@ -110,9 +132,7 @@ CommandLine parse_command_line(const Command & command, const std::vector<std::s
                 }
             }
         }
-        if (!flag && !request_option) {
-            throw UsageError("speech " + command.name + " has no flag " + name);
-        }
+        if (!flag && !request_option) throw UsageError("speech " + command.name + " has no flag " + name + meant(command, name));
         // A boolean option is true alone and takes true or false only after "=", so that the argument after it stays
         // an argument.
         const bool boolean = request_option && speech_option_type(option) == SPEECH_TYPE_BOOL;
@@ -166,19 +186,23 @@ bool asks_for_help(const std::vector<std::string> & args) {
     return false;
 }
 
-std::string command_help(const Command & command) {
-    std::string out = "usage: speech " + command.usage + "\n\n" + command.description + "\n";
+std::string command_help(const Command & command, FILE * stream) {
+    using terminal::Color;
+    using terminal::paint;
+    std::string out = paint(Color::Bold, "usage:", stream) + " speech " + command.usage + "\n\n" + command.description + "\n";
     if (command.model) out += "MODEL is a model file (.gguf), or the NAME[:TYPE] of one in `speech models`, fetched the first time it is used.\n";
     constexpr size_t kWidth = 28;
     if (!command.flags.empty()) out += "\n";
     for (const Flag & f : command.flags) {
-        out += "  " + padded(f.name + (f.value.empty() ? "" : " " + f.value), kWidth) + f.help + (f.repeatable ? "; repeatable" : "") + "\n";
+        out += "  " + paint(Color::Lavender, padded(f.name + (f.value.empty() ? "" : " " + f.value), kWidth), stream) + f.help +
+               (f.repeatable ? "; repeatable" : "") + "\n";
     }
     if (command.request_options) {
-        out += "\nRequest options, each the C API's option of the same name; the model refuses one it does not take,\n"
+        out += "\n" + paint(Color::Bold, "Request options", stream) + ", each the C API's option of the same name; the model refuses one it does not take,\n"
                "and `speech info MODEL` lists those it takes with their defaults and ranges:\n";
         for (speech_option o : vocabulary()) {
-            out += "  " + option_flag(o) + (speech_option_type(o) == SPEECH_TYPE_BOOL ? "[=false]" : " " + std::string(option_metavar(o))) + "\n";
+            out += "  " + paint(Color::Lavender, option_flag(o) + (speech_option_type(o) == SPEECH_TYPE_BOOL ? "[=false]" : " " + std::string(option_metavar(o))),
+                                stream) + "\n";
         }
         if (command.task_options) {
             out += "Each also after tts., asr. or vad. (--asr.language), for the synthesis, recognition or detection model alone.\n";

@@ -6,6 +6,7 @@
 #include <string>
 
 #include "commands.h"
+#include "terminal.h"
 
 // speech quantize: writes a model file of F32 weights in another weight type through speech_quantize(), into a file
 // or into a folder under the name GGUF's naming convention gives it, as the converters name theirs.
@@ -37,9 +38,11 @@ int run_quantize(const CommandLine & line, FILE *) {
         out = (std::filesystem::u8path(out) / std::filesystem::u8path(conventional_name(info.get(), *type))).u8string();
     }
     const auto t0 = std::chrono::steady_clock::now();
+    terminal::Status status("Writing " + out + " in " + *type);
     check(speech_quantize(in.c_str(), type->c_str(), out.c_str()));
-    const double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::fprintf(stderr, "wrote %s in %.1f s\n", out.c_str(), took);
+    char took[32];
+    std::snprintf(took, sizeof took, " in %.1f s", std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+    status.done("Wrote " + out + took);
     return 0;
 }
 

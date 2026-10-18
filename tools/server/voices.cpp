@@ -26,6 +26,7 @@
 #include "ggml.h"
 #include "httplib.h"
 #include "json.h"
+#include "log.h"
 #include "openai-error.h"
 #include "openai-api.h"
 #include "wav.h"
@@ -89,7 +90,7 @@ public:
     ~Recording() {
         std::error_code ec;
         fs::remove(path, ec);
-        if (ec) std::fprintf(stderr, "speech serve: cannot remove %s: %s\n", path.u8string().c_str(), ec.message().c_str());
+        if (ec) log("Cannot remove " + path.u8string() + ": " + ec.message());
     }
     fs::path path;
 };

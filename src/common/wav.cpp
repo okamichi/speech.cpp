@@ -36,6 +36,14 @@ Wav read_wav(const std::string & path) {
     return parse_wav(std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>()), path);
 }
 
+bool starts_with_riff(const std::string & path) {
+    std::ifstream f(std::filesystem::u8path(path), std::ios::binary);
+    if (!f) throw Error(Fault::Io, "cannot open " + path + "; check the path and that the file can be read");
+    char magic[4] = {};
+    f.read(magic, 4);
+    return std::memcmp(magic, "RIFF", 4) == 0;
+}
+
 Wav parse_wav(const std::string & file, const std::string & path) {
     const auto * bytes = reinterpret_cast<const uint8_t *>(file.data());
     const size_t size_of_file = file.size();
@@ -75,6 +83,10 @@ Wav parse_wav(const std::string & file, const std::string & path) {
         const uint8_t * p = data + i * width;
         if (ieee) {
             std::memcpy(&wav.samples[i], p, 4);
+            if (!std::isfinite(wav.samples[i])) {
+                throw Error(Fault::File, path + " holds a sample that is not a finite number, sample " + std::to_string(i) +
+                                             "; write the recording again from its source");
+            }
         } else if (bits == 16) {
             wav.samples[i] = (float) (int16_t) u16(p) / 32768.0f;
         } else if (bits == 24) {

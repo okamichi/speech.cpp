@@ -32,7 +32,7 @@ API and its Realtime transcription over HTTP, and runs a worker process for any 
 requests, [ASIST](https://github.com/nyosegawa/asist) among them.
 
 **A time to first audio of a quarter of a second or less.** On an Apple M5, Qwen3-TTS 0.6B sends its first audio
-0.035 s after the text and Irodori-TTS v4.1-Small-MF 0.22 s after it, and the rest follows while it plays.
+0.029 s after the text and Irodori-TTS v4.1-Small-MF 0.16 s after it, and the rest follows while it plays.
 
 **One executable, nothing else to install.** No Python and no CUDA: `speech` fetches each model by name, one GGUF file
 with its codec, and runs it on Metal, Vulkan or the CPU.
@@ -62,6 +62,7 @@ implementation, from the same inputs.
 |---|---|---|---|
 | Synthesis | [`qwen3-tts-0.6b`](https://huggingface.co/sakasegawa/Qwen3-TTS-12Hz-0.6B-CustomVoice-GGUF), [`qwen3-tts-1.7b`](https://huggingface.co/sakasegawa/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF) | de en es fr it ja ko pt ru zh | nine named speakers; audio that streams from its first frame of 0.08 s; the 1.7B model follows an instruction of how to speak |
 | Synthesis | [`irodori-tts-mf`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF), [`irodori-tts`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-GGUF), [`irodori-tts-large`](https://huggingface.co/sakasegawa/Irodori-TTS-v4-Large-GGUF) | ja | Japanese in the voice of a reference recording, or in a voice described in words; the large model follows both more closely |
+| Synthesis | [`drama-3`](https://huggingface.co/sakasegawa/drama-3-GGUF) | 83 languages | a scene of up to 16 speakers, with cues such as laughter written in the text, in voices cloned from recordings and their words; a 20.8 GB file. Built with Fish Audio |
 | Recognition | [`qwen3-asr-0.6b`](https://huggingface.co/sakasegawa/Qwen3-ASR-0.6B-GGUF), [`qwen3-asr-1.7b`](https://huggingface.co/sakasegawa/Qwen3-ASR-1.7B-GGUF) | 30 languages | finds the language itself, takes a prompt of names and terms, and up to 20 minutes at once |
 | Recognition | [`reazonspeech-v2`](https://huggingface.co/sakasegawa/reazonspeech-nemo-v2-GGUF) | ja | Japanese with punctuation, in recordings of many minutes |
 | Recognition | [`parakeet-tdt_ctc-0.6b-ja`](https://huggingface.co/sakasegawa/parakeet-tdt_ctc-0.6b-ja-GGUF) | ja | short Japanese utterances, fast, with times |
@@ -70,7 +71,7 @@ implementation, from the same inputs.
 
 A command takes a model by its name and fetches its converted file from Hugging Face, from the repository the name links
 to, the first time. [docs/models.md](docs/models.md) lists the models with their sizes, voices and languages, and each
-family has a page: [Qwen3-TTS](docs/models/qwen3-tts.md), [Irodori-TTS](docs/models/irodori-tts.md),
+family has a page: [Qwen3-TTS](docs/models/qwen3-tts.md), [Irodori-TTS](docs/models/irodori-tts.md), [Drama 3](docs/models/drama3.md),
 [FastConformer](docs/models/fastconformer.md), [Qwen3-ASR](docs/models/qwen3-asr.md) and
 [Silero VAD](docs/models/silero-vad.md).
 
@@ -127,7 +128,7 @@ source](docs/install.md#build-from-source).
 | `speech tts` | speaks text into a WAVE file or to stdout |
 | `speech asr` | writes the text of WAVE files, or of the microphone as someone speaks |
 | `speech vad` | writes where someone speaks in WAVE files |
-| `speech voice` | makes an Irodori-TTS voice file from reference recordings |
+| `speech voice` | makes a voice file for Irodori-TTS or Drama 3 from reference recordings |
 | `speech info` | prints what a model file says of its model |
 | `speech devices` | lists the devices a model can run on |
 | `speech models`, `pull`, `rm` | list, fetch and remove models |
@@ -188,18 +189,21 @@ does: one request per line on stdin, its audio or text and one terminal message 
 Every stage of each port is compared with tensors dumped from the official implementation. The recognizers write the
 official text on every check input in F32 and F16.
 
-Measured with [speech-bench](https://github.com/nyosegawa/speech-bench) on 2026-10-14, on an Apple M5 (Metal) and an
-RTX 2080 (Vulkan), one request at a time. Speech: 20 Japanese sentences with seeds 1 and 2, three rounds, Irodori-TTS
+Measured with [speech-bench](https://github.com/nyosegawa/speech-bench) on an Apple M5 (Metal) on 2026-10-16 and an
+RTX 2080 (Vulkan) on 2026-10-14 and 16, one request at a time. Speech: 20 Japanese sentences with seeds 1 and 2, three rounds, Irodori-TTS
 in the voice of one reference recording; the p50 time to first audio, the RTFx (the seconds of audio over the seconds
-they took, so larger is faster), and the CER of the speech as Qwen3-ASR 1.7B hears it.
+they took, so larger is faster), and the CER of the speech as Qwen3-ASR 1.7B hears it. Drama 3 was measured on
+2026-10-16 with seeds 1 to 3, in the voice of one reference recording, with the RTX 2080 computing the experts of 35 of
+its 40 layers on the CPU.
 
 | Model | Time to first audio, M5 / RTX 2080 | RTFx | CER |
 |---|---|---|---|
-| `qwen3-tts-0.6b`, Q8_0 | 0.035 s / 0.024 s | 3.7 / 5.2 | 6.4% / 6.0% |
-| `qwen3-tts-1.7b`, Q8_0 | 0.057 s / 0.032 s | 2.6 / 4.2 | 4.2% / 6.1% |
-| `irodori-tts-mf`, F16 | 0.22 s / 0.12 s | 7.7 / 18 | 6.7% / 6.4% |
-| `irodori-tts`, F16, 16 steps | 1.15 s / 0.52 s | 3.5 / 8.5 | 3.2% / 3.2% |
-| `irodori-tts-large`, Q8_0, 16 steps | 4.44 s / 1.25 s | 0.98 / 3.3 | 5.5% / 5.5% |
+| `qwen3-tts-0.6b`, Q8_0 | 0.029 s / 0.024 s | 3.7 / 5.2 | 8.1% / 6.0% |
+| `qwen3-tts-1.7b`, Q8_0 | 0.041 s / 0.032 s | 2.6 / 4.2 | 4.5% / 6.1% |
+| `irodori-tts-mf`, F16 | 0.16 s / 0.12 s | 9.0 / 18 | 6.1% / 6.4% |
+| `irodori-tts`, F16, 16 steps | 0.75 s / 0.52 s | 4.9 / 8.5 | 3.2% / 3.2% |
+| `irodori-tts-large`, Q8_0, 16 steps | 2.2 s / 1.25 s | 1.7 / 3.3 | 5.4% / 5.5% |
+| `drama-3`, Q4_K | 0.28 s / 0.58 s | 1.1 / 0.57 | 1.8% / 2.4% |
 
 Recognition: the 4,483 utterances of Common Voice 8.0's Japanese test set, trimmed to the voice, with the CER that
 accepts other spellings of the same words in parentheses, the same on both machines, and the p50 latency over the same
@@ -207,11 +211,11 @@ utterances; parakeet-tdt-0.6b-v3 on 300 English utterances of FLEURS, three roun
 
 | Model | CER on Common Voice ja | p50 latency, M5 / RTX 2080 |
 |---|---|---|
-| `parakeet-tdt_ctc-0.6b-ja`, Q8_0 | 7.9% (3.0%) | 0.045 s / 0.050 s |
-| `reazonspeech-v2`, Q8_0 | 12.0% (7.1%) | 0.063 s / 0.092 s |
-| `qwen3-asr-0.6b`, Q8_0 | 11.9% (7.0%) | 0.127 s / 0.073 s |
-| `qwen3-asr-1.7b`, Q8_0 | 9.5% (4.7%) | 0.312 s / 0.140 s |
-| `parakeet-tdt-0.6b-v3`, F16 | WER 8.8% on FLEURS en | 0.077 s / 0.095 s |
+| `parakeet-tdt_ctc-0.6b-ja`, Q8_0 | 7.9% (3.0%) | 0.027 s / 0.050 s |
+| `reazonspeech-v2`, Q8_0 | 12.0% (7.1%) | 0.046 s / 0.092 s |
+| `qwen3-asr-0.6b`, Q8_0 | 11.9% (7.0%) | 0.107 s / 0.072 s |
+| `qwen3-asr-1.7b`, Q8_0 | 9.5% (4.7%) | 0.257 s / 0.140 s |
+| `parakeet-tdt-0.6b-v3`, F16 | WER 8.8% on FLEURS en | 0.058 s / 0.095 s |
 
 Each model's page has more.
 
@@ -222,7 +226,7 @@ Each model's page has more.
 | [Install](docs/install.md) | installers, updating, uninstalling, requirements, release archives and building from source |
 | [Command line](docs/cli.md) | every subcommand and option |
 | [Models](docs/models.md) | the catalog, names, where models are kept, voices and languages |
-| [Qwen3-TTS](docs/models/qwen3-tts.md), [Irodori-TTS](docs/models/irodori-tts.md), [FastConformer](docs/models/fastconformer.md), [Qwen3-ASR](docs/models/qwen3-asr.md), [Silero VAD](docs/models/silero-vad.md) | each family: what it does, its options, accuracy and speed |
+| [Qwen3-TTS](docs/models/qwen3-tts.md), [Irodori-TTS](docs/models/irodori-tts.md), [Drama 3](docs/models/drama3.md), [FastConformer](docs/models/fastconformer.md), [Qwen3-ASR](docs/models/qwen3-asr.md), [Silero VAD](docs/models/silero-vad.md) | each family: what it does, its options, accuracy and speed |
 | [Server and page](docs/server.md) | `speech serve` and OpenAI's audio API |
 | [Worker protocol](docs/worker.md) | `speech worker` for programs |
 | [C API](docs/c-api.md) | `speech.h` |
@@ -239,6 +243,9 @@ MIT, see [LICENSE](LICENSE). The model weights are their authors':
 - Semantic-DACVAE-Japanese-32dim, the codec in the Irodori-TTS files, is Aratako's under the MIT License. It derives
   from Meta's facebook/dacvae-watermarked, under the Apache License 2.0; the SAM License that its card's text also
   names was corrected to Apache-2.0 in facebookresearch/dacvae on 2025-12-19.
+- Drama 3 and its codec are Fish Audio's, under the Fish Audio Community License 1.0: research and non-commercial use
+  is free, commercial use is allowed below USD 500,000 of yearly revenue, and a speech or voice-cloning service for
+  others needs a separate license from Fish Audio. Built with Fish Audio.
 - The parakeet models are NVIDIA's, under CC-BY-4.0, and reazonspeech-nemo-v2 is reazon-research's, under the Apache
   License 2.0.
 - Silero VAD is the Silero Team's, under the MIT License.

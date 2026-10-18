@@ -214,7 +214,7 @@ comment.
 - Build with `cmake -B build && cmake --build build -j`, and run the checks the change touches before
   committing code, a family's stage checks with `python3 checks/run.py <family> --devices cpu,gpu`. A change to the C
   API or the worker also runs `speech-api-check` and
-  `checks/smoke/worker_smoke.py` for both synthesis families, and `speech-api-check transcribe` and
+  `checks/smoke/worker_smoke.py` for each synthesis family, and `speech-api-check transcribe` and
   `checks/smoke/worker_recognition_smoke.py` for both recognition families, and `speech-api-check detect` with Silero
   VAD; a change to the server runs `checks/smoke/server_smoke.py`, `checks/smoke/server_realtime_smoke.py` and
   `checks/smoke/server_page_smoke.py`, one to the page `checks/smoke/server_page_browser_smoke.mjs`, one to the command

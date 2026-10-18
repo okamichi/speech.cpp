@@ -33,6 +33,16 @@ Diff compare(const std::vector<T> & got, const std::vector<T> & want) {
     return compare(got.data(), want.data(), std::min(got.size(), want.size()));
 }
 
+/**
+ * Keeps in `worst` the comparison of lower SNR and says whether it took `d`. A comparison whose SNR is not a number,
+ * which NaNs in a result give, is the worst, and stays so once kept.
+ */
+inline bool keep_worst(Diff & worst, const Diff & d) {
+    if (std::isnan(worst.snr_db) || d.snr_db >= worst.snr_db) return false;
+    worst = d;
+    return true;
+}
+
 inline void print_diff(const std::string & what, const Diff & d) {
     std::printf("%-34s SNR %6.1f dB, max |diff| %.2e\n", what.c_str(), d.snr_db, d.max_abs);
 }

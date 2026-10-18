@@ -87,7 +87,8 @@ void synthesize(const std::shared_ptr<SpeechJob> & job, Turns & turns, uint64_t 
         char line[256];
         std::snprintf(line, sizeof line, ", time to first audio %.3f s, %.2f s of audio", seconds_between(started, job->first_audio),
                       (double) job->samples / job->sample_rate);
-        return std::string(line) + (job->requests > 1 ? " from " + std::to_string(job->requests) + " requests" : "");
+        return std::string(line) + (job->requests > 1 ? " from " + std::to_string(job->requests) + " requests" : "") +
+               (job->instructions_truncated ? ", instructions cut to the model's token limit" : "");
     });
 }
 
@@ -210,10 +211,14 @@ void answer_speech(std::shared_ptr<Served> served, const httplib::Request & req,
     }
     job->text = std::move(asked.input);
     job->options = asked.options;
-    char log[256];
-    std::snprintf(log, sizeof log, "speech: voice %s, seed %lld", voice.c_str(), (long long) seed.value_or(-1));
+    char name[256];
+    std::snprintf(name, sizeof name, "voice %s, seed %lld", voice.c_str(), (long long) seed.value_or(-1));
+    job->method = req.method;
+    job->path = req.path;
+    job->client = req.remote_addr;
     const uint64_t ticket = served->turns().take();
-    std::thread(synthesize, job, std::ref(served->turns()), ticket, std::string(log)).detach();
+    std::thread(synthesize, job, std::ref(served->turns()), ticket, std::string(name)).detach();
+    const LogLine log_line(*job);
 
     // A wav is sent whole, so it waits for the end; a stream waits until the library has begun a request's work, so
     // that a request it refuses is answered with an error status rather than a stream that breaks off.
@@ -232,7 +237,6 @@ void answer_speech(std::shared_ptr<Served> served, const httplib::Request & req,
     if (whole) {
         res.set_header("X-Speech-Stop", speech_stop_name(job->stop));
         res.set_header("X-Speech-Instructions-Truncated", job->instructions_truncated ? "true" : "false");
-        if (job->instructions_truncated) std::fprintf(stderr, "speech serve: instructions cut to the model's token limit\n");
         res.set_content(wav_header(job->pending.size(), sample_rate) + job->pending, "audio/wav");
         return;
     }

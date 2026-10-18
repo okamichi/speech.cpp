@@ -20,9 +20,11 @@ extern char ** environ;
 #endif
 
 #include "cache.h"
+#include "commands.h"
 #include "fetch.h"
 #include "json-reader.h"
 #include "json.h"
+#include "log.h"
 #include "openai-api.h"
 #include "page-files.h"
 
@@ -220,7 +222,7 @@ void Page::load(const httplib::Request & req, httplib::Response & res) {
         replacing->loading();
         try {
             const auto served = models_.replace(task, path.u8string());
-            report_(*served);
+            log(loaded_line({served->info().get()}, served->load_seconds()));
             send("{\"type\":\"loaded\",\"task\":\"" + std::string(task_name(task)) + "\",\"held\":" + served_json(*served) + "}");
         } catch (const Failure & e) {
             send(error_event(openai::library_error(e)));
@@ -248,6 +250,7 @@ void Page::add_voice(const httplib::Request & req, httplib::Response & res) {
     }
     try {
         const auto uploaded = models_.upload_voice(name->second.content, file->second.content);
+        log("Added the voice " + name->second.content + " to " + speech_model_info_name(uploaded.first->info().get()));
         res.set_content("{\"held\":" + served_json(*uploaded.first) + "}", "application/json");
     } catch (const openai::ApiError & e) {
         send_error(res, e);
@@ -262,7 +265,7 @@ void open_in_browser(const std::string & url) {
 #ifdef _WIN32
     const std::wstring wide(url.begin(), url.end());
     const auto opened = (INT_PTR) ShellExecuteW(nullptr, L"open", wide.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    if (opened <= 32) std::fprintf(stderr, "speech serve: cannot open a browser (error %lld); open the address above in one\n", (long long) opened);
+    if (opened <= 32) log("Cannot open a browser (error " + std::to_string((long long) opened) + "); open the address above in one");
 #else
 #ifdef __APPLE__
     const char * opener = "open";
@@ -287,7 +290,7 @@ void open_in_browser(const std::string & url) {
     posix_spawn_file_actions_destroy(&actions);
     posix_spawnattr_destroy(&attributes);
     if (error != 0) {
-        std::fprintf(stderr, "speech serve: cannot start %s (%s); open the address above in a browser\n", opener, std::strerror(error));
+        log(std::string("Cannot start ") + opener + " (" + std::strerror(error) + "); open the address above in a browser");
         return;
     }
     std::thread([pid] {

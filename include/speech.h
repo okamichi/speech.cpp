@@ -62,7 +62,7 @@ extern "C" {
  * version and a minor version of m or more. Version 3.0 is first released with speech.cpp 0.7.0, the option prompt
  * included, and a declaration added since says the version that added it.
  */
-#define SPEECH_API_VERSION_MINOR 1
+#define SPEECH_API_VERSION_MINOR 2
 
 /** The SPEECH_API_VERSION_MAJOR the library was built with, for a caller that loads it at run time. */
 SPEECH_API int speech_api_version_major(void);
@@ -415,7 +415,18 @@ typedef enum speech_option {
      * where it is wrong. A step that checks several tokens computes several rows at once, which rounds differently from
      * a step of one, so that where two tokens score almost the same the draft can choose the other. Added in 4.1.
      */
-    SPEECH_OPT_DRAFT = 46
+    SPEECH_OPT_DRAFT = 46,
+    /**
+     * "experts_on_cpu", a boolean: whether a synthesis may compute on the CPU the experts of the layers that the GPU of a
+     * mixture-of-experts model does not hold (Drama 3). Such a model loaded on a GPU keeps there the experts of as many
+     * layers as its free memory holds beside the rest of the model and every request's caches, and the CPU's memory
+     * holds the others, which the CPU computes with the load's threads; the model's information then reports those
+     * threads (speech_model_info_threads()). True by default; false refuses a request to a model that holds some of its
+     * experts on the CPU with SPEECH_ERROR_OUT_OF_RANGE, a value such a model does not take, for a caller that wants the GPU's
+     * speed or nothing; the request then runs with true. A model on
+     * the CPU, or one whose GPU holds every expert, takes either. Added in 4.2.
+     */
+    SPEECH_OPT_EXPERTS_ON_CPU = 47
 } speech_option;
 
 /** The type of an option's values, which names the setter that takes them. */
@@ -623,7 +634,7 @@ SPEECH_API const char * speech_model_info_voice_description(const speech_model_i
 
 /**
  * Whether the model takes voices made from reference recordings (1), through speech_voice_add() and
- * speech_voice_make().
+ * speech_voice_make_from().
  */
 SPEECH_API int speech_model_info_voice_files(const speech_model_info * info);
 
@@ -632,6 +643,13 @@ SPEECH_API int speech_model_info_voice_files(const speech_model_info * info);
  * hexadecimal, or NULL for a model that takes no voice files.
  */
 SPEECH_API const char * speech_model_info_voice_codec(const speech_model_info * info);
+
+/**
+ * Whether speech_voice_add() takes a reference recording in a WAVE file as well as a voice file (1). A model that needs
+ * the words of each recording (Drama 3) takes voice files alone, made with speech_voice_make_from(), and is 0, as is a
+ * model that takes no voice files. Added in 4.2.
+ */
+SPEECH_API int speech_model_info_voice_recordings(const speech_model_info * info);
 
 /** The most tokens of text a synthesis request may have, in the model's own tokens; 0 for a recognition or detection model. */
 SPEECH_API size_t speech_model_info_max_text_tokens(const speech_model_info * info);
@@ -727,8 +745,8 @@ SPEECH_API const char * speech_model_info_device(const speech_model_info * info)
 /**
  * The number of threads the CPU computes a loaded model's graphs with: the number the load parameters set, or the
  * library's default, for a model on the CPU and for a model on a GPU that can compute some of its graphs on the CPU (a
- * model that takes decode_on_cpu), and 0 for a model on a GPU none of whose graphs runs on the CPU. 0 for information
- * read from a file.
+ * model that takes decode_on_cpu, or one whose GPU does not hold every expert, as experts_on_cpu says), and 0 for a model
+ * on a GPU none of whose graphs runs on the CPU. 0 for information read from a file.
  */
 SPEECH_API int speech_model_info_threads(const speech_model_info * info);
 
@@ -807,13 +825,17 @@ SPEECH_API speech_status speech_model_get_info(const speech_model * model, speec
  * mixed to mono, resampled to the model's rate and encoded with the model's codec on the model's device. The name is
  * compared with case and must not name a voice the model has. A request that is running finishes first; any thread
  * may call it. A model that takes no voice files is SPEECH_ERROR_UNSUPPORTED, and a voice file made with another
- * codec is SPEECH_ERROR_INVALID_ARGUMENT.
+ * codec is SPEECH_ERROR_INVALID_ARGUMENT. A model whose speech_model_info_voice_recordings() is 0 (Drama 3, which needs
+ * a recording's words) takes a voice file alone, and a recording is SPEECH_ERROR_INVALID_ARGUMENT naming "path"; its
+ * information describes the voice by its speakers.
  */
 SPEECH_API speech_status speech_voice_add(speech_model * model, const char * name, const char * path);
 
 /**
- * Adds a voice and returns an owned information snapshot including it, freed with speech_model_info_free().
- * On failure neither the voices nor *info change; info may be NULL when no snapshot is needed. Added in 3.2.
+ * Adds a voice as speech_voice_add() does and returns an owned information snapshot including it, freed with
+ * speech_model_info_free(); info may be NULL when no snapshot is needed. A voice the model refuses changes neither the
+ * voices nor *info. A voice the model takes stays added even where the host's memory then runs out for the snapshot,
+ * which is SPEECH_ERROR_OUT_OF_MEMORY with *info unchanged. Added in 4.0.
  */
 SPEECH_API speech_status speech_voice_add_with_info(speech_model * model, const char * name, const char * path,
                                                   speech_model_info ** info);
@@ -829,9 +851,10 @@ SPEECH_API speech_status speech_voice_make(const char * model_path, const char *
                                            const char * voice_path, const speech_load_params * params);
 
 /*
- * Voice parameters: what speech_voice_make_from() makes a voice file of, several reference recordings and the loudness
- * each is brought to, as the official runtime's ref_wavs and ref_normalize_db, or a speaker-inversion embedding, as its
- * ref_embed. Added in 3.1.
+ * Voice parameters: what speech_voice_make_from() makes a voice file of: several reference recordings and the loudness
+ * each is brought to, as Irodori-TTS's runtime's ref_wavs and ref_normalize_db, or a speaker-inversion embedding, as
+ * its ref_embed; or, for Drama 3, recordings with their transcripts and voice files, each given to one of the speakers
+ * a text names. Added in 3.1.
  */
 typedef struct speech_voice_params speech_voice_params;
 
@@ -869,6 +892,26 @@ SPEECH_API speech_status speech_voice_params_keep_loudness(speech_voice_params *
  */
 SPEECH_API speech_status speech_voice_params_set_embedding(speech_voice_params * params, const float * values, size_t tokens,
                                                            size_t dim);
+
+/**
+ * Gives the reference recording added last its transcript, the words it speaks in UTF-8, which a model that writes a
+ * reference's words into its prompt needs for every recording (Drama 3) and any other refuses. Added in 4.2.
+ */
+SPEECH_API speech_status speech_voice_params_set_transcript(speech_voice_params * params, const char * text);
+
+/**
+ * Gives what was added last, a reference recording or a voice file of one speaker, the speaker `speaker`, from 0, under
+ * which a text's speaker tag finds it (Drama 3: `<|speaker:N|>`). A recording is speaker 0's and a voice file keeps its
+ * speakers unless one is given; a model of one speaker refuses it. Added in 4.2.
+ */
+SPEECH_API speech_status speech_voice_params_set_speaker(speech_voice_params * params, int speaker);
+
+/**
+ * Adds the references of the voice file at `path`, made for a model of the same family and codec, as they are, without
+ * encoding them again, so that a voice of several speakers is put together from voices made before (Drama 3); a model
+ * that joins its references into one voice refuses it. Added in 4.2.
+ */
+SPEECH_API speech_status speech_voice_params_add_voice(speech_voice_params * params, const char * path);
 
 /**
  * Makes a voice file at `voice_path` of `voice`, its references, at least one, or its embedding, for the model file at
@@ -1085,7 +1128,7 @@ SPEECH_API speech_stop speech_result_stop(const speech_result * result);
 /** The seed a synthesis used, the request's or the one the library drew; -1 for a recognition and a detection. */
 SPEECH_API int64_t speech_result_seed(const speech_result * result);
 
-/** Whether compatibility processing cut the instructions to their token limit; 0 for NULL. Added in 3.2. */
+/** Whether compatibility processing cut the instructions to their token limit; 0 for NULL. Added in 4.0. */
 SPEECH_API int speech_result_instructions_truncated(const speech_result * result);
 
 /**

@@ -18,6 +18,13 @@ inline ggml_tensor * mul_mat(ggml_context * ctx, ggml_tensor * a, ggml_tensor * 
     return t;
 }
 
+/** The matrix products of the experts `ids` chooses, asking for float32 accumulation as mul_mat() does. */
+inline ggml_tensor * mul_mat_id(ggml_context * ctx, ggml_tensor * experts, ggml_tensor * b, ggml_tensor * ids) {
+    ggml_tensor * t = ggml_mul_mat_id(ctx, experts, b, ids);
+    ggml_prec_set_acc(t, GGML_PREC_F32);
+    return t;
+}
+
 /**
  * Computes `gf`, whose tensors have their memory, on `backend`. A backend that runs out of memory while it computes
  * throws an Error of Fault::OutOfMemory, and one that fails otherwise an Error of Fault::Device.
@@ -62,6 +69,12 @@ public:
 
     /** Allocates the graph with `allocr`, uploads the inputs and computes it on `backend`. */
     void compute(ggml_backend_t backend, ggml_gallocr_t allocr);
+
+    /**
+     * Allocates the graph with `sched`, uploads the inputs and computes it on the scheduler's backends, each node on
+     * the one that holds the weights it reads.
+     */
+    void compute(ggml_backend_sched_t sched);
 
     /** Gives `input`, an input of this graph, the data `data` from the next compute on, converted to its type. */
     void set(ggml_tensor * input, const std::vector<float> & data);

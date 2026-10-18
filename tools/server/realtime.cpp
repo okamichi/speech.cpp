@@ -109,8 +109,11 @@ public:
 
 private:
     static void log(const std::string & item, size_t samples, Clock::time_point arrived, Clock::time_point started, const std::string & outcome) {
-        std::fprintf(stderr, "realtime %s: %.2f s of audio: waited %.3f s%s in %.3f s\n", item.c_str(), (double) samples / realtime::kRate,
-                     seconds_between(arrived, started), outcome.c_str(), seconds_between(started, Clock::now()));
+        char line[128];
+        std::snprintf(line, sizeof line, ": %.2f s of audio: waited %.3f s", (double) samples / realtime::kRate, seconds_between(arrived, started));
+        char took[32];
+        std::snprintf(took, sizeof took, " in %.3f s", seconds_between(started, Clock::now()));
+        server::log("realtime " + item + line + outcome + took);
     }
 
     /** The recognition model held, named `model` unless that is "". */
@@ -170,7 +173,7 @@ void Realtime::route(httplib::Server & http) {
     http.WebSocket("/v1/realtime", [this](const httplib::Request & req, httplib::ws::WebSocket & ws) {
         HeldModels held(models_);
         realtime::Session session(held, [&ws](const std::string & event) { ws.send(event); }, limit_, req.get_param_value("model"));
-        std::fprintf(stderr, "%s realtime session opened\n", req.remote_addr.c_str());
+        log("realtime session from " + req.remote_addr + " opened");
         session.open();
         std::string message;
         for (;;) {
@@ -179,7 +182,7 @@ void Realtime::route(httplib::Server & http) {
             if (got == httplib::ws::Timeout) continue;
             session.receive(message, got == httplib::ws::Text);
         }
-        std::fprintf(stderr, "%s realtime session closed\n", req.remote_addr.c_str());
+        log("realtime session from " + req.remote_addr + " closed");
     });
 }
 

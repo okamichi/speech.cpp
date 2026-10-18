@@ -53,7 +53,7 @@ std::string gguf_architecture(const std::string & path);
 
 /**
  * A GGUF file of a known layout whose metadata stays readable and whose tensors, all of them or those a reader asks
- * for, live in one backend buffer. A key is read by its exact type: one that is missing or of another type throws
+ * for, live in a backend buffer, or in one buffer for each backend a reader places them on. A key is read by its exact type: one that is missing or of another type throws
  * with a message naming it, where ggml's own getters would abort the process. Every failure throws an Error: Io for
  * a file that cannot be opened or read, File for one whose content this release cannot use.
  */
@@ -66,6 +66,11 @@ public:
      */
     ModelFile(const std::string & path, ggml_backend_t backend, const Layout & layout,
               const std::function<bool(const std::string & name)> & keep = {});
+    /**
+     * Opens and checks the file as above, and loads each tensor onto the backend that `place` gives its name, or none
+     * where it gives null: a model whose weights a GPU holds in part and the CPU's memory in the rest.
+     */
+    ModelFile(const std::string & path, const Layout & layout, const std::function<ggml_backend_t(const std::string & name)> & place);
     /** Opens and checks the file as above and loads no tensor, for a reader of its metadata alone. */
     ModelFile(const std::string & path, const Layout & layout);
     /**
@@ -140,6 +145,8 @@ public:
     uint64_t file_bytes() const;
     /** The bytes of every tensor the file holds, as it stores them. */
     uint64_t weight_bytes() const;
+    /** The bytes of the tensors whose names `which` accepts, as the file stores them. */
+    uint64_t weight_bytes(const std::function<bool(const std::string & name)> & which) const;
     /** The bytes of the tensors the file holds in each type, as it stores them. */
     std::map<ggml_type, uint64_t> type_bytes() const;
     /** The number of metadata entries, the key of the one at `index`, and its value as JSON text. */
@@ -155,8 +162,8 @@ private:
     /** "layout 1 of qwen3-tts", or the architecture alone while the layout is not yet read. */
     std::string layout_name() const;
     void check_tensors(const Layout & layout) const;
-    /** Allocates the tensors whose names `keep` accepts, or every tensor, on `backend`, without their values. */
-    void allocate(ggml_backend_t backend, const std::function<bool(const std::string & name)> & keep);
+    /** Allocates each tensor on the backend `place` gives its name, or none where it gives null, without its values. */
+    void allocate(const std::function<ggml_backend_t(const std::string & name)> & place);
     /** Reads the values of the allocated tensors from the file. */
     void load();
 
@@ -165,17 +172,16 @@ private:
     std::shared_ptr<gguf_context> gguf_;
     /** The shapes and types of every tensor of the file, which ggml reads with its metadata. */
     std::shared_ptr<ggml_context> ctx_;
-    /** The copies of the tensors a reader keeps, when it keeps only some. */
-    std::unique_ptr<ggml_context, decltype(&ggml_free)> kept_{nullptr, ggml_free};
-    /** The context of the loaded tensors: ctx_, kept_, or none for a reader of the metadata alone. */
-    ggml_context * loaded_ = nullptr;
+    /** The copies of the loaded tensors, a context for each backend that holds some, none for a reader of the metadata alone. */
+    std::vector<std::unique_ptr<ggml_context, decltype(&ggml_free)>> kept_;
     /**
      * The loaded tensors by name. ggml_get_tensor() compares the name with every tensor of the context before it, and
      * a decoder looks up its layers' tensors for every graph it builds: on an Apple M5, building a step of the 0.6B
      * Qwen3-ASR decoder, 308 lookups, took 0.36 ms with it and takes 0.12 ms here, of a step of 7.5 ms (2026-10-07).
      */
     std::unordered_map<std::string, ggml_tensor *> by_name_;
-    std::unique_ptr<ggml_backend_buffer, decltype(&ggml_backend_buffer_free)> buffer_{nullptr, ggml_backend_buffer_free};
+    /** The buffers of the loaded tensors, one for each context of kept_. */
+    std::vector<std::unique_ptr<ggml_backend_buffer, decltype(&ggml_backend_buffer_free)>> buffers_;
 };
 
 /**

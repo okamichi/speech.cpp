@@ -23,7 +23,7 @@ namespace server {
 /** A model the server holds, which each request that runs on it keeps until it ends. */
 class Served {
 public:
-    Served(Model model, std::string path, std::string catalog_name);
+    Served(Model model, std::string path, std::string catalog_name, double load_seconds);
 
     speech_model * get() const { return model_.get(); }
     /** The file the model was loaded from. */
@@ -31,6 +31,8 @@ public:
     /** The catalog's NAME[:TYPE] the page loaded it by, or "" for a file the command line gave. */
     const std::string & catalog_name() const { return catalog_name_; }
     long long created() const { return created_; }
+    /** The seconds its load took, its warm-up included. */
+    double load_seconds() const { return load_seconds_; }
     /** The order in which the requests on this model take it. */
     Turns & turns() { return turns_; }
 
@@ -54,6 +56,7 @@ private:
     Model model_;
     std::string path_, catalog_name_;
     long long created_ = (long long) std::time(nullptr);
+    double load_seconds_;
     Turns turns_;
     mutable std::mutex mutex_;
     std::shared_ptr<const speech_model_info> info_;
@@ -81,7 +84,7 @@ public:
      * Loads a model given on the command line in the place of its task, which must be empty: a file, or the catalog's
      * file of `catalog_name`, "" for a file named by its path.
      */
-    void load_given(const std::string & path, const std::string & catalog_name);
+    std::shared_ptr<Served> load_given(const std::string & path, const std::string & catalog_name);
 
     /** The model of a task, or nullptr while there is none or one is being loaded in its place. */
     std::shared_ptr<Served> of(speech_task task) const;

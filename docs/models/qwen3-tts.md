@@ -58,33 +58,33 @@ Every stage is checked against the official implementation's tensors:
 
 ## Weight types
 
-Each model comes in four types; `NAME:TYPE` fetches one (`speech tts qwen3-tts-0.6b:q6_k`). speech-bench on 2026-10-14,
-two rounds, on an Apple M5 with Metal and an RTX 2080 with Vulkan: the 20 sentences of its `prompts/speak-ja-JP.json`
+Each model comes in four types; `NAME:TYPE` fetches one (`speech tts qwen3-tts-0.6b:q6_k`). speech-bench, two
+rounds, on an Apple M5 with Metal on 2026-10-16 and an RTX 2080 with Vulkan on 2026-10-14: the 20 sentences of its `prompts/speak-ja-JP.json`
 with `ono_anna` and seed 1, as Qwen3-ASR 1.7B hears them. The peak memory is the process's on the M5, whose GPU shares
 it, and the VRAM the video memory in use on the RTX 2080. The CER of one type moves by a few points from seed to seed and
 from one machine to the other, so only a larger difference, such as the 0.6B model's Q4_K, tells two types apart.
 
 | Model | Type | File | CER, M5 / RTX 2080 | Peak memory, M5 | VRAM, RTX 2080 | RTFx, M5 / RTX 2080 |
 |---|---|---|---|---|---|---|
-| 0.6B | Q8_0 | 1.21 GB | 4.3% / 6.0% | 1.37 GB | 1.33 GB | 3.6 / 5.2 |
-| 0.6B | Q6_K | 0.99 GB | 9.3% / 10.3% | 1.15 GB | 1.11 GB | 4.1 / 5.5 |
-| 0.6B | Q5_K | 0.87 GB | 7.8% / 7.0% | 1.03 GB | 0.99 GB | 4.6 / 6.2 |
-| 0.6B | Q4_K | 0.76 GB | 12.8% / 11.0% | 0.92 GB | 0.88 GB | 4.9 / 6.4 |
-| 1.7B | Q8_0 | 2.29 GB | 4.3% / 8.8% | 2.45 GB | 2.41 GB | 2.5 / 4.3 |
-| 1.7B | Q6_K | 1.82 GB | 3.5% / 5.3% | 1.99 GB | 1.94 GB | 2.9 / 4.9 |
-| 1.7B | Q5_K | 1.57 GB | 3.8% / 3.7% | 1.73 GB | 1.69 GB | 3.3 / 5.5 |
-| 1.7B | Q4_K | 1.33 GB | 7.6% / 8.0% | 1.49 GB | 1.45 GB | 3.9 / 5.8 |
+| 0.6B | Q8_0 | 1.21 GB | 7.3% / 6.0% | 1.37 GB | 1.33 GB | 3.9 / 5.2 |
+| 0.6B | Q6_K | 0.99 GB | 7.0% / 10.3% | 1.16 GB | 1.11 GB | 4.4 / 5.5 |
+| 0.6B | Q5_K | 0.87 GB | 8.3% / 7.0% | 1.03 GB | 0.99 GB | 4.8 / 6.2 |
+| 0.6B | Q4_K | 0.76 GB | 11.1% / 11.0% | 0.92 GB | 0.88 GB | 5.4 / 6.4 |
+| 1.7B | Q8_0 | 2.29 GB | 5.5% / 8.8% | 2.46 GB | 2.41 GB | 2.7 / 4.3 |
+| 1.7B | Q6_K | 1.82 GB | 4.3% / 5.3% | 1.99 GB | 1.94 GB | 3.1 / 4.9 |
+| 1.7B | Q5_K | 1.57 GB | 4.5% / 3.7% | 1.74 GB | 1.69 GB | 3.6 / 5.5 |
+| 1.7B | Q4_K | 1.33 GB | 6.5% / 8.0% | 1.49 GB | 1.45 GB | 4.0 / 5.8 |
 
 ## Speed
 
-speech-bench on 2026-10-14: the 20 sentences of its `prompts/speak-ja-JP.json` with the speaker `ono_anna` and seeds 1
-and 2, one request at a time through the worker, Q8_0, the medians of three rounds. The RTFx is the seconds of audio
+speech-bench, on the M5 on 2026-10-16 and the RTX 2080 on 2026-10-14: the 20 sentences of its `prompts/speak-ja-JP.json`
+with the speaker `ono_anna` and seeds 1 and 2, one request at a time through the worker, Q8_0, the medians of three rounds. The RTFx is the seconds of audio
 over the seconds they took, so larger is faster. The CER is of the speech as Qwen3-ASR 1.7B hears it.
 
 | Model | Device | Time to first audio, p50 | Time to first audio, p90 | RTFx | CER |
 |---|---|---|---|---|---|
-| 0.6B | Apple M5, Metal | 0.035 s | 0.051 s | 3.7 | 6.4% |
-| 1.7B | Apple M5, Metal | 0.057 s | 0.107 s | 2.6 | 4.2% |
+| 0.6B | Apple M5, Metal | 0.029 s | 0.036 s | 3.7 | 8.1% |
+| 1.7B | Apple M5, Metal | 0.041 s | 0.059 s | 2.6 | 4.5% |
 | 0.6B | RTX 2080, Vulkan | 0.024 s | 0.034 s | 5.2 | 6.0% |
 | 1.7B | RTX 2080, Vulkan | 0.032 s | 0.046 s | 4.2 | 6.1% |
 

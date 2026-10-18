@@ -25,6 +25,23 @@ if either option is missing. `--voices-dir` can name another folder.
 The server holds at most one model of each task: synthesis, recognition and detection (Silero VAD), whose model
 transcriptions with `chunking_strategy` and Realtime sessions with `server_vad` use. It loads the models given, listens once they are ready, and logs to stderr.
 
+```
+▁▃▅▇▅▃▁ speech.cpp 0.8.10 · serve
+
+  ✓ Qwen3-TTS-12Hz-0.6B-CustomVoice   synthesis    MTL0   1.30 s
+  ✓ Qwen3-ASR-0.6B                    recognition  MTL0   0.27 s
+
+  ♪ Ready at http://127.0.0.1:8080/
+    API at http://127.0.0.1:8080/v1; Ctrl-C stops the server
+
+16:59:00  POST /v1/audio/speech            200     voice ryan, seed 8460068737356201: waited 0.000 s, time to first audio 0.045 s, 3.60 s of audio in 0.944 s
+16:59:00  GET  /v1/nothing                 404     Invalid URL (GET /v1/nothing).
+```
+
+Each request is one line: the time, the method and path, the status (`gone` when the client went away before the
+answer, `failed` when the model failed), what it made or the error's message, and on a server that listens for other
+machines the client's address.
+
 | Option | Meaning |
 |---|---|
 | `--host ADDRESS` | the address to listen on, 127.0.0.1 unless given. The server has no authentication and no TLS, so a server reachable from other machines belongs behind a proxy that adds them. The page is served only on 127.0.0.1, `::1` or `localhost` |

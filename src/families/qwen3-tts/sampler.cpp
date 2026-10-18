@@ -100,22 +100,6 @@ Candidates candidates(const std::vector<float> & raw, const SamplingParams & p, 
     return c;
 }
 
-double uniform(std::mt19937_64 & rng) {
-    return (double) rng() * 0x1.0p-64;
-}
-
-int pick(const std::vector<double> & weights, double u) {
-    double sum = 0;
-    for (double w : weights) sum += w;
-    const int last = (int) weights.size() - 1;
-    double cumulative = 0;
-    for (int i = 0; i < last; i++) {
-        cumulative += weights[i] / sum;
-        if (cumulative > u) return i;
-    }
-    return last;
-}
-
 int32_t sample(const std::vector<float> & logits, const SamplingParams & p, const std::vector<int32_t> & history,
                const std::vector<bool> & banned, double u) {
     if (p.greedy) {
@@ -129,10 +113,4 @@ int32_t sample(const std::vector<float> & logits, const SamplingParams & p, cons
 int32_t sample(const std::vector<float> & logits, const SamplingParams & p, const std::vector<int32_t> & history,
                const std::vector<bool> & banned, std::mt19937_64 & rng) {
     return sample(logits, p, history, banned, p.greedy ? 0.0 : uniform(rng));
-}
-
-Error temperature_overflow(float temperature) {
-    return Error(Fault::OutOfRange,
-                 "the temperature " + json_number(temperature) + " pushes the logits beyond the range of a float; give a temperature nearer 1",
-                 "temperature");
 }
