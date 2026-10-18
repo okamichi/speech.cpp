@@ -53,15 +53,24 @@ class Server:
         """The page's address as the server printed it before it listened, or None where it has no page."""
         for _ in range(50):
             for line in self.lines:
-                found = re.search(r"the page, which fetches and loads models, is at (http://\S+/)", line)
+                # The page's address ends in "/", and the API's, where the server has no page, in "/v1".
+                found = re.search(r"Ready at (http://\S+)$", line.strip())
                 if found:
-                    return found.group(1)
-            if any("listening on" in line for line in self.lines):
-                time.sleep(0.1)
-                if not any("the page, which" in line for line in self.lines):
-                    return None
+                    return found.group(1) if found.group(1).endswith("/") else None
             time.sleep(0.1)
         return None
+
+    def logged(self):
+        """The lines of the log so far, each without the time of day it begins with."""
+        return [re.sub(r"^\d\d:\d\d:\d\d  ", "", line) for line in list(self.lines)]
+
+    def wait_for_line(self, wanted, what):
+        """Waits for a line of the log, without its time of day, that `wanted` accepts; fails naming `what` after 5 s."""
+        for _ in range(50):
+            if any(wanted(line) for line in self.logged()):
+                return
+            time.sleep(0.1)
+        raise SystemExit(f"the log has no line of {what}: " + "".join(list(self.lines)[-4:]))
 
     def call(self, method, path, body=None, headers=None, stream=False):
         """The status, the headers by lower-case name and the body, or the open response of a stream."""
@@ -81,8 +90,8 @@ class Server:
     def post_json(self, path, member, headers=None):
         return self.call("POST", path, json.dumps(member, ensure_ascii=False).encode(), {"Content-Type": "application/json", **(headers or {})})
 
-    def transcribe(self, fields, files):
-        """POST /v1/audio/transcriptions with the form's fields, (name, value), and files, (name, filename, content)."""
+    def transcribe(self, fields, files, headers=None):
+        """POST /v1/audio/transcriptions with the form's fields, (name, value), files, (name, filename, content), and headers."""
         boundary = uuid.uuid4().hex
         body = b""
         for name, value in fields:
@@ -91,7 +100,7 @@ class Server:
             body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\n"
                      f"Content-Type: audio/wav\r\n\r\n").encode() + content + b"\r\n"
         body += f"--{boundary}--\r\n".encode()
-        return self.call("POST", "/v1/audio/transcriptions", body, {"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        return self.call("POST", "/v1/audio/transcriptions", body, {"Content-Type": f"multipart/form-data; boundary={boundary}", **(headers or {})})
 
     def stop(self):
         """Stops the server and returns what it wrote on stdout."""

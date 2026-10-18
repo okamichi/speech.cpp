@@ -148,7 +148,7 @@ try {
   const address = await racing(new Promise((resolve) => {
     const read = (chunk) => {
       log += chunk;
-      const m = /is at (http:\/\/127\.0\.0\.1:\d+\/)/.exec(log);
+      const m = /Ready at (http:\/\/127\.0\.0\.1:\d+\/)/.exec(log);
       if (m) resolve(m[1]);
     };
     server.child.stdout.on('data', read);

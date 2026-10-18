@@ -17,8 +17,7 @@ namespace server {
 
 class Page {
 public:
-    /** `report` says on stderr which model a task has once the page has loaded it. */
-    Page(ServedModels & models, const Access & access, void (*report)(const Served &)) : models_(models), access_(access), report_(report) {}
+    Page(ServedModels & models, const Access & access) : models_(models), access_(access) {}
 
     void route(httplib::Server & http);
 
@@ -35,7 +34,6 @@ private:
 
     ServedModels & models_;
     const Access & access_;
-    void (*report_)(const Served &);
 };
 
 /** The model's entry in GET /speech/models and in the load's last event: its information and where it came from. */

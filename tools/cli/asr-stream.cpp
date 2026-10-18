@@ -18,16 +18,14 @@
 
 #ifdef _WIN32
 #include <io.h>
-#include <windows.h>
 #else
-#include <sys/ioctl.h>
 #include <unistd.h>
 #endif
 
 #include "microphone.h"
 #include "realtime-events.h"
 #include "regions.h"
-#include "utf8.h"
+#include "terminal.h"
 #include "utterances.h"
 
 namespace {
@@ -113,41 +111,18 @@ private:
     size_t readings_ = 0;
 };
 
-/** The columns a terminal draws a code point in: none for a combining mark, two for a wide East Asian character. */
-int columns_of(uint32_t cp) {
-    if ((cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x200B && cp <= 0x200F) || (cp >= 0x20D0 && cp <= 0x20FF) || (cp >= 0xFE00 && cp <= 0xFE0F) ||
-        (cp >= 0xFE20 && cp <= 0xFE2F)) {
-        return 0;
-    }
-    const bool wide = (cp >= 0x1100 && cp <= 0x115F) || (cp >= 0x2E80 && cp <= 0x303E) || (cp >= 0x3041 && cp <= 0x33FF) ||
-                      (cp >= 0x3400 && cp <= 0x4DBF) || (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0xA000 && cp <= 0xA4CF) ||
-                      (cp >= 0xAC00 && cp <= 0xD7A3) || (cp >= 0xF900 && cp <= 0xFAFF) || (cp >= 0xFE30 && cp <= 0xFE4F) ||
-                      (cp >= 0xFF00 && cp <= 0xFF60) || (cp >= 0xFFE0 && cp <= 0xFFE6) || (cp >= 0x1F300 && cp <= 0x1F64F) ||
-                      (cp >= 0x1F900 && cp <= 0x1F9FF) || (cp >= 0x20000 && cp <= 0x3FFFD);
-    return wide ? 2 : 1;
-}
-
 /**
  * Writes each utterance's text as a line, and on a terminal the agreed text of the utterance under way on the current
  * line, its end where it is longer than the line, until the utterance's text replaces it.
  */
 class TextOutput {
 public:
-    explicit TextOutput(FILE * out) : out_(out) {
-#ifdef _WIN32
-        // A console draws "\r" and the erasing of a line only with its virtual terminal processing on.
-        const HANDLE console = (HANDLE) _get_osfhandle(_fileno(out));
-        DWORD mode = 0;
-        terminal_ = GetConsoleMode(console, &mode) && SetConsoleMode(console, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-#else
-        terminal_ = isatty(fileno(out));
-#endif
-    }
+    explicit TextOutput(FILE * out) : out_(out), terminal_(terminal::draws_on(out)) {}
 
     void delta(const std::string & text) {
         if (!terminal_) return;
         shown_ += text;
-        std::fputs(("\r\033[K" + tail(shown_, columns() - 1)).c_str(), out_);
+        std::fputs(("\r\033[K" + terminal::tail(shown_, terminal::columns(out_) - 1)).c_str(), out_);
         std::fflush(out_);
     }
 
@@ -158,31 +133,8 @@ public:
     }
 
 private:
-    int columns() const {
-#ifdef _WIN32
-        CONSOLE_SCREEN_BUFFER_INFO info;
-        if (GetConsoleScreenBufferInfo((HANDLE) _get_osfhandle(_fileno(out_)), &info)) return info.srWindow.Right - info.srWindow.Left + 1;
-#else
-        winsize size{};
-        if (ioctl(fileno(out_), TIOCGWINSZ, &size) == 0 && size.ws_col > 0) return size.ws_col;
-#endif
-        return 80;
-    }
-
-    /** The end of `text` that fits in `width` columns, after an ellipsis where it does not fit whole. */
-    static std::string tail(const std::string & text, int width) {
-        const std::vector<uint32_t> cps = decode_utf8(text).value_or(std::vector<uint32_t>());
-        int whole = 0;
-        for (const uint32_t cp : cps) whole += columns_of(cp);
-        if (whole <= width) return text;
-        int used = 0;
-        size_t first = cps.size();
-        while (first > 0 && used + columns_of(cps[first - 1]) <= width - 1) used += columns_of(cps[--first]);
-        return "\xE2\x80\xA6" + encode_utf8(std::vector<uint32_t>(cps.begin() + (long) first, cps.end()));
-    }
-
     FILE * out_;
-    bool terminal_ = false;
+    bool terminal_;
     std::string shown_;
 };
 

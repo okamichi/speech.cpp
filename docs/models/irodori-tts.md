@@ -180,8 +180,8 @@ sentence.
 
 ## Weight types
 
-Each model comes in five types; `NAME:TYPE` fetches one (`speech tts irodori-tts:q8_0`). speech-bench on 2026-10-14,
-two rounds, on an Apple M5 with Metal and an RTX 2080 with Vulkan: the 20 sentences of its `prompts/speak-ja-JP.json`
+Each model comes in five types; `NAME:TYPE` fetches one (`speech tts irodori-tts:q8_0`). speech-bench, two
+rounds, on an Apple M5 with Metal on 2026-10-16 and an RTX 2080 with Vulkan on 2026-10-14: the 20 sentences of its `prompts/speak-ja-JP.json`
 in a voice file of one reference, seed 1, v4.1-Small with 16 steps, as Qwen3-ASR 1.7B hears them. The peak memory is the
 process's on the M5, whose GPU shares it, and the VRAM the video memory in use on the RTX 2080. The codec stays F32 in
 every type, which is why the files shrink less than the other models'. The CER of one type moves by a point or two from
@@ -189,52 +189,52 @@ seed to seed and from one machine to the other, and more for v4.1-Small-MF.
 
 | Model | Type | File | CER, M5 / RTX 2080 | Peak memory, M5 | VRAM, RTX 2080 | RTFx, M5 / RTX 2080 |
 |---|---|---|---|---|---|---|
-| v4.1-Small-MF | F16 | 1.92 GB | 6.5% / 6.3% | 2.04 GB | 2.30 GB | 7.7 / 18 |
-| v4.1-Small-MF | Q8_0 | 1.21 GB | 9.5% / 8.6% | 1.33 GB | 1.59 GB | 7.4 / 18 |
-| v4.1-Small-MF | Q6_K | 1.04 GB | 8.3% / 8.1% | 1.16 GB | 1.44 GB | 7.4 / 18 |
-| v4.1-Small-MF | Q5_K | 0.95 GB | 5.0% / 5.0% | 1.07 GB | 1.33 GB | 7.1 / 18 |
-| v4.1-Small-MF | Q4_K | 0.86 GB | 7.1% / 8.8% | 0.99 GB | 1.25 GB | 7.5 / 18 |
-| v4.1-Small, 16 steps | F16 | 1.91 GB | 3.2% / 3.2% | 2.04 GB | 2.39 GB | 3.5 / 8.4 |
-| v4.1-Small, 16 steps | Q8_0 | 1.20 GB | 3.5% / 3.2% | 1.33 GB | 1.69 GB | 3.4 / 8.5 |
-| v4.1-Small, 16 steps | Q6_K | 1.03 GB | 3.2% / 3.3% | 1.17 GB | 1.54 GB | 3.3 / 8.3 |
-| v4.1-Small, 16 steps | Q5_K | 0.94 GB | 3.0% / 3.2% | 1.07 GB | 1.43 GB | 3.3 / 8.3 |
-| v4.1-Small, 16 steps | Q4_K | 0.86 GB | 4.2% / 3.2% | 1.00 GB | 1.35 GB | 3.4 / 8.5 |
+| v4.1-Small-MF | F16 | 1.92 GB | 6.0% / 6.3% | 2.04 GB | 2.30 GB | 9.6 / 18 |
+| v4.1-Small-MF | Q8_0 | 1.21 GB | 9.0% / 8.6% | 1.33 GB | 1.59 GB | 9.7 / 18 |
+| v4.1-Small-MF | Q6_K | 1.04 GB | 8.1% / 8.1% | 1.17 GB | 1.44 GB | 9.5 / 18 |
+| v4.1-Small-MF | Q5_K | 0.95 GB | 5.0% / 5.0% | 1.07 GB | 1.33 GB | 9.7 / 18 |
+| v4.1-Small-MF | Q4_K | 0.86 GB | 7.8% / 8.8% | 0.99 GB | 1.25 GB | 9.8 / 18 |
+| v4.1-Small, 16 steps | F16 | 1.91 GB | 3.1% / 3.2% | 2.04 GB | 2.39 GB | 5.2 / 8.4 |
+| v4.1-Small, 16 steps | Q8_0 | 1.20 GB | 3.5% / 3.2% | 1.34 GB | 1.69 GB | 5.2 / 8.5 |
+| v4.1-Small, 16 steps | Q6_K | 1.03 GB | 3.3% / 3.3% | 1.17 GB | 1.54 GB | 5.0 / 8.3 |
+| v4.1-Small, 16 steps | Q5_K | 0.94 GB | 3.5% / 3.2% | 1.08 GB | 1.43 GB | 5.0 / 8.3 |
+| v4.1-Small, 16 steps | Q4_K | 0.86 GB | 4.2% / 3.2% | 1.00 GB | 1.35 GB | 5.1 / 8.5 |
 
-v4-Large, on the same sentences at 16 steps on the M5 on 2026-10-14, with seeds 1, 2 and 3 for the CER and seed 1 for
-the RTFx; the RTX 2080 ran F16 and Q8_0 alone, with seed 1. The name fetches Q8_0, which hears as F16 does in half the
+v4-Large, on the same sentences at 16 steps with seed 1, on the M5 on 2026-10-16; the RTX 2080 ran F16 and Q8_0 alone,
+on 2026-10-14. The name fetches Q8_0, which hears as F16 does in half the
 memory and leaves room on a GPU of 8 GB.
 
 | Type | File | CER, M5 | Peak memory, M5 | VRAM, RTX 2080 | RTFx, M5 / RTX 2080 |
 |---|---|---|---|---|---|
-| F16 | 6.96 GB | 4.5% | 7.2 GB | 7.5 GB | 0.97 / 3.6 |
-| Q8_0 | 3.88 GB | 4.8% | 4.1 GB | 4.4 GB | 0.97 / 3.4 |
-| Q6_K | 3.27 GB | 4.5% | 3.5 GB | | 0.94 |
-| Q5_K | 2.93 GB | 4.9% | 3.2 GB | | 0.94 |
-| Q4_K | 2.62 GB | 5.1% | 2.9 GB | | 1.00 |
+| F16 | 6.96 GB | 5.1% | 7.2 GB | 7.5 GB | 1.7 / 3.6 |
+| Q8_0 | 3.88 GB | 5.6% | 4.1 GB | 4.4 GB | 1.7 / 3.4 |
+| Q6_K | 3.27 GB | 5.3% | 3.5 GB | | 1.7 |
+| Q5_K | 2.93 GB | 5.1% | 3.1 GB | | 1.6 |
+| Q4_K | 2.62 GB | 5.3% | 2.8 GB | | 1.7 |
 
 ## Speed
 
-speech-bench on 2026-10-14: the 20 sentences of its `prompts/speak-ja-JP.json` in a voice file of one reference, seeds
-1 and 2, one request at a time through the worker, F16, the medians of three rounds. The RTFx is the seconds of audio
+speech-bench, on the M5 on 2026-10-16 and the RTX 2080 on 2026-10-14: the 20 sentences of its
+`prompts/speak-ja-JP.json` in a voice file of one reference, seeds 1 and 2, one request at a time through the worker, F16, the medians of three rounds. The RTFx is the seconds of audio
 over the seconds they took, so larger is faster. The CER is of the speech as Qwen3-ASR 1.7B hears it.
 
 | Model | Device | Time to first audio, p50 | Time to first audio, p90 | RTFx | CER |
 |---|---|---|---|---|---|
-| v4.1-Small-MF, 4 steps | Apple M5, Metal | 0.22 s | 0.45 s | 7.7 | 6.7% |
-| v4.1-Small, 16 steps | Apple M5, Metal | 1.15 s | 3.03 s | 3.5 | 3.2% |
+| v4.1-Small-MF, 4 steps | Apple M5, Metal | 0.16 s | 0.28 s | 9.0 | 6.1% |
+| v4.1-Small, 16 steps | Apple M5, Metal | 0.75 s | 1.74 s | 4.9 | 3.2% |
 | v4.1-Small-MF, 4 steps | RTX 2080, Vulkan | 0.12 s | 0.19 s | 18 | 6.4% |
 | v4.1-Small, 16 steps | RTX 2080, Vulkan | 0.52 s | 1.14 s | 8.5 | 3.2% |
 
 The time to first audio includes the whole sentence's sampling, so it grows with the sentence. With v4.1-Small's
-default of 40 steps, the RTFx on the M5 is 1.8 with F16 weights, the median of five runs on each of three sentences of
-5 to 18 s on the same day.
+default of 40 steps, the RTFx on the M5 is 2.9 with F16 weights, on the same sentences with seed 1 and one round.
 
-v4-Large in Q8_0, the same 20 sentences with seed 1 and one round, on 2026-10-14:
+v4-Large in Q8_0, the same 20 sentences with seed 1 and one round, on the M5 on 2026-10-16 and the RTX 2080 on
+2026-10-14:
 
 | Steps | Device | Time to first audio, p50 | Time to first audio, p90 | RTFx | CER |
 |---|---|---|---|---|---|
-| 16 | Apple M5, Metal | 4.40 s | 14.4 s | 0.97 | 5.8% |
-| 40 | Apple M5, Metal | 10.7 s | 35.5 s | 0.42 | 5.0% |
+| 16 | Apple M5, Metal | 2.11 s | 7.92 s | 1.7 | 5.6% |
+| 40 | Apple M5, Metal | 5.34 s | 19.8 s | 0.76 | 5.0% |
 | 16 | RTX 2080, Vulkan | 1.24 s | 3.80 s | 3.4 | 5.8% |
 | 40 | RTX 2080, Vulkan | 3.14 s | 10.0 s | 1.4 | 5.0% |
 

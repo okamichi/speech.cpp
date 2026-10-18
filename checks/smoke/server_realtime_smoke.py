@@ -290,14 +290,16 @@ while len(done) < 2:
         done.append(e)
 assert [(e["type"], e["item_id"]) for e in done] == [("conversation.item.input_audio_transcription.completed", item) for item in
                                                     (first["item_id"], second["item_id"])], done
-http = f"transcription: {len(pcms[1]) / 2 / 24000:.2f} s of audio at 24000 Hz"
+http = "POST /v1/audio/transcriptions "
+heard = f"{len(pcms[1]) / 2 / 24000:.2f} s of audio at 24000 Hz"
 for _ in range(50):
-    lines = list(server.lines)
-    order = [k for k, line in enumerate(lines) if line.startswith((f"realtime {first['item_id']}:", f"realtime {second['item_id']}:", http))]
+    lines = server.logged()
+    order = [k for k, line in enumerate(lines)
+             if line.startswith((f"realtime {first['item_id']}:", f"realtime {second['item_id']}:")) or line.startswith(http) and heard in line]
     if len(order) >= 3:
         break
     time.sleep(0.1)
-ran = [lines[k].split(":")[0] for k in order][-3:]
+ran = ["transcription" if lines[k].startswith(http) else lines[k].split(":")[0] for k in order][-3:]
 assert ran == [f"realtime {first['item_id']}", f"realtime {second['item_id']}", "transcription"], ran
 print("realtime: two commits and then an HTTP transcription run in that order")
 
@@ -358,7 +360,7 @@ ws.send({"type": "input_audio_buffer.commit"})
 events = until_done(ws)
 assert events[-1]["type"].endswith(".completed") and events[-1]["usage"]["seconds"] == len(pcms[0]) * 6 / 48000, events[-1]
 for _ in range(50):
-    if any(line.startswith("realtime a reading:") and "stopped: its utterance ended" in line for line in list(server.lines)):
+    if any(line.startswith("realtime a reading:") and "stopped: its utterance ended" in line for line in server.logged()):
         break
     time.sleep(0.1)
 else:

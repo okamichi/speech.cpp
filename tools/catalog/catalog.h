@@ -54,6 +54,9 @@ const std::vector<CatalogModel> & catalog();
 /** Whether a model argument is a path to a model file, which ends in ".gguf" in any case, rather than a name. */
 bool is_model_path(const std::string & argument);
 
+/** How a line names a model argument before the model is loaded: a path by its file's name, a name as it is given. */
+std::string argument_label(const std::string & argument);
+
 /** Whether a model argument is a path or a NAME of the catalog, whatever type follows it. */
 bool names_a_model(const std::string & argument);
 

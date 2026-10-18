@@ -8,15 +8,20 @@
  * information read without loading with the loaded model's, adds the voices, refuses each option's values with the
  * category and the option's name and accepts the neutral ones, speaks one sentence into a WAVE file, repeats a drawn
  * seed's audio, gives the same audio with every option set at its default as with none, checks the family's rules of
- * the whole request (Qwen3-TTS's max_seconds, longest text, sampling and instructions, Irodori-TTS's lengths, steps,
- * progress, cut at the tail, guidance, voice none and instructions), cancels a request from another thread and one
- * before it runs, and runs requests from two threads at once. Irodori-TTS's own checks are in speech-api-irodori.c.
+ * the whole request (Qwen3-TTS's max_seconds, longest text, sampling and instructions, Drama 3's max_seconds, longest
+ * text and temperature, Irodori-TTS's lengths, steps, progress, cut at the tail, guidance, voice none and instructions),
+ * cancels a request from another thread and one before it runs, and runs requests from two threads at once.
+ * Irodori-TTS's own checks are in speech-api-irodori.c.
  *
  * With a recognition model (transcribe), speech-api-recognition.c, which takes F32 or F16 weights only, and with a
  * detection model (detect), speech-api-detection.c and speech-api-detection-stream.c.
  *
+ * With --make-drama3-voice, Drama 3's voice files of a recording and its transcript, of them put together as two
+ * speakers, and the ones refused (speech-api-drama3.c), then refuses the recording added alone and speaks both voices.
+ *
  * usage: speech-api-check <model.gguf> <out.wav> [--device NAME] [--voice NAME=FILE]...
  *                         [--make-voice <reference.wav> <voice.gguf>]
+ *                         [--make-drama3-voice <reference.wav> <transcript> <voice.gguf>]
  *        speech-api-check transcribe <model.gguf> <dump folder>... [--device NAME]
  *        speech-api-check detect <model.gguf> <dump folder>... [--device NAME]
  */
@@ -99,10 +104,11 @@ static void on_log(speech_log_level level, const char * text, void * user_data) 
 }
 
 /** Adds the voices of the command line after the model's own, and checks the voices a model refuses. */
-static int check_voices(speech_model * model, const char * model_path, char ** names, char ** paths, size_t n_voices, int irodori) {
+static int check_voices(speech_model * model, const char * model_path, char ** names, char ** paths, size_t n_voices, const char * recording) {
     speech_model_info * info = NULL;
     if (speech_model_get_info(model, &info) != SPEECH_OK) return fail("speech_model_get_info");
     const size_t own = speech_model_info_voice_count(info);
+    const int voice_files = speech_model_info_voice_files(info), recordings = speech_model_info_voice_recordings(info);
     speech_model_info_free(info);
     for (size_t i = 0; i < n_voices; i++) {
         const double start = now_seconds();
@@ -124,32 +130,39 @@ static int check_voices(speech_model * model, const char * model_path, char ** n
         printf("added the voice %s from %s in %.3f s\n", names[i], paths[i], now_seconds() - start);
     }
     int ok = 1;
-    if (!irodori) {
+    if (!voice_files) {
         ok &= expect(speech_voice_add(model, "added", "voice.gguf"), SPEECH_ERROR_UNSUPPORTED, NULL, "a voice added to a model with its own");
         ok &= expect(speech_voice_make(model_path, "reference.wav", "voice.gguf", NULL), SPEECH_ERROR_UNSUPPORTED, "model_path",
                      "a voice file made for a model with its own voices");
         return ok ? 0 : 1;
     }
-    ok &= expect(speech_voice_add(model, names[0], paths[0]), SPEECH_ERROR_INVALID_ARGUMENT, "name", "a voice under a name the model has");
-    ok &= expect(speech_voice_add(model, "", paths[0]), SPEECH_ERROR_INVALID_ARGUMENT, "name", "a voice without a name");
+    // The name is checked before the file, so a model given no voice is refused names with a file that is not there.
+    const char * path = n_voices ? paths[0] : "no-such-folder/voice.gguf";
+    if (n_voices) ok &= expect(speech_voice_add(model, names[0], path), SPEECH_ERROR_INVALID_ARGUMENT, "name", "a voice under a name the model has");
+    ok &= expect(speech_voice_add(model, "", path), SPEECH_ERROR_INVALID_ARGUMENT, "name", "a voice without a name");
     ok &= expect(speech_voice_add(model, "missing", "no-such-folder/voice.gguf"), SPEECH_ERROR_IO, "path", "a voice file that is not there");
     // The voice none speaks without a reference in a file that holds the null speaker, and its name stays its own in
     // one that does not.
-    ok &= expect(speech_voice_add(model, "none", paths[0]), SPEECH_ERROR_INVALID_ARGUMENT, "name", "a voice added under the name none");
+    ok &= expect(speech_voice_add(model, "none", path), SPEECH_ERROR_INVALID_ARGUMENT, "name", "a voice added under the name none");
+    if (recording && !recordings) {
+        ok &= expect(speech_voice_add(model, "recording", recording), SPEECH_ERROR_INVALID_ARGUMENT, "path",
+                     "a recording added to a model that takes voice files alone");
+    }
     if (speech_model_get_info(model, &info) != SPEECH_OK) return fail("speech_model_get_info");
     ok &= speech_model_info_voice_count(info) == own + n_voices &&
-          !strcmp(speech_model_info_voice_name(info, own + n_voices - 1), names[n_voices - 1]) &&
-          !strcmp(speech_model_info_voice_language(info, own), "");
+          (!n_voices || (!strcmp(speech_model_info_voice_name(info, own + n_voices - 1), names[n_voices - 1]) &&
+                         !strcmp(speech_model_info_voice_language(info, own), "")));
     if (!ok) fprintf(stderr, "FAIL: the information does not list the voices added\n");
     speech_model_info_free(info);
     return ok ? 0 : 1;
 }
 
 /**
- * Qwen3-TTS: max_seconds stops the speech and a refused value leaves it, and a text past the longest is refused and
- * leaves its request to run again with a shorter one.
+ * A model that decides the length of its speech as it goes, Qwen3-TTS or Drama 3: max_seconds stops the speech and a
+ * refused value leaves it, and a text past the longest is refused and leaves its request to run again with a shorter
+ * one.
  */
-static int check_qwen3_tts(speech_model * model, const speech_model_info * info, const char * voice) {
+static int check_length_limits(speech_model * model, const speech_model_info * info, const char * voice) {
     const int rate = speech_model_info_sample_rate(info);
     speech_request * r = new_request(model, "これは最大の長さで止める、少し長めの文です。止まったところで終わります。", voice, 3);
     int ok = expect(speech_request_set_float(r, SPEECH_OPT_MAX_SECONDS, 0.5), SPEECH_OK, NULL, "max_seconds 0.5");
@@ -228,6 +241,81 @@ static int check_qwen3_tts_sampling(speech_model * model, const char * voice) {
     if (!ok) fprintf(stderr, "FAIL: Qwen3-TTS's sampling options are not followed\n");
     free(a.samples);
     free(b.samples);
+    return ok ? 0 : 1;
+}
+
+/**
+ * Drama 3's temperature, which every draw of a frame divides by: one that the sampler's float rounds to 0 is refused
+ * before any work, naming the option, and leaves the request to run once fixed.
+ */
+static int check_drama3_sampling(speech_model * model, const char * voice) {
+    Audio a = {NULL, 0, 0};
+    speech_request * r = new_request(model, "はい。", voice, 3);
+    int ok = expect(speech_request_set_float(r, SPEECH_OPT_TEMPERATURE, 1e-50), SPEECH_OK, NULL, "temperature 1e-50") &&
+             expect(speech_synthesize(r, collect, &a), SPEECH_ERROR_OUT_OF_RANGE, "temperature", "a temperature that a float rounds to 0") &&
+             a.n == 0 && speech_request_set_float(r, SPEECH_OPT_TEMPERATURE, 1) == SPEECH_OK &&
+             expect(speak(r, &a, NULL, NULL), SPEECH_OK, NULL, "the same request run again with temperature 1") && a.n > 0;
+    if (!ok) fprintf(stderr, "FAIL: Drama 3's temperature is not followed\n");
+    free(a.samples);
+    return ok ? 0 : 1;
+}
+
+/**
+ * Drama 3's experts_on_cpu: a model on a GPU that holds some of its experts on the CPU reports the CPU's threads and
+ * refuses false, and one whose GPU holds every expert, or one on the CPU, takes it.
+ */
+static int check_drama3_experts(speech_model * model, const speech_model_info * info, const char * voice) {
+    const int on_gpu = strcmp(speech_model_info_device(info), "CPU") != 0, split = on_gpu && speech_model_info_threads(info) > 0;
+    Audio a = {NULL, 0, 0};
+    speech_request * r = new_request(model, "はい。", voice, 3);
+    speech_request_set_float(r, SPEECH_OPT_MAX_SECONDS, 0.5);
+    int ok = expect(speech_request_set_bool(r, SPEECH_OPT_EXPERTS_ON_CPU, 0), SPEECH_OK, NULL, "experts_on_cpu false");
+    if (split) {
+        ok &= expect(speech_synthesize(r, collect, &a), SPEECH_ERROR_OUT_OF_RANGE, "experts_on_cpu", "experts_on_cpu false where the CPU holds experts") &&
+              a.n == 0 && speech_request_set_bool(r, SPEECH_OPT_EXPERTS_ON_CPU, 1) == SPEECH_OK &&
+              expect(speak(r, &a, NULL, NULL), SPEECH_OK, NULL, "the same request with experts_on_cpu true") && a.n > 0;
+    } else {
+        ok &= expect(speak(r, &a, NULL, NULL), SPEECH_OK, NULL, "experts_on_cpu false where the model's device holds every expert") && a.n > 0;
+    }
+    if (ok) printf("experts_on_cpu false %s\n", split ? "refused, since the CPU holds some experts, and true spoke" : "spoke, since the model's device holds every expert");
+    else fprintf(stderr, "FAIL: experts_on_cpu is not followed\n");
+    free(a.samples);
+    return ok ? 0 : 1;
+}
+
+/**
+ * Drama 3's voices made by check_drama3_voices(): the information names their speakers, and a scene of the two speakers
+ * of the cast speaks. Nothing to check where no voice was made.
+ */
+static int check_drama3_cast(speech_model * model, const speech_model_info * info, int made) {
+    if (!made) return 0;
+    const size_t n = speech_model_info_voice_count(info);
+    int ok = n >= 2 && !strcmp(speech_model_info_voice_name(info, n - 2), "made") && !strcmp(speech_model_info_voice_name(info, n - 1), "cast");
+    if (ok) {
+        const char * one = speech_model_info_voice_description(info, n - 2), * two = speech_model_info_voice_description(info, n - 1);
+        ok = strchr(one, '0') && !strchr(one, '1') && strchr(two, '0') && strchr(two, '1');
+    }
+    if (!ok) fprintf(stderr, "FAIL: the information does not name the speakers of Drama 3's voices\n");
+    Audio a = {NULL, 0, 0};
+    speech_request * r = new_request(model, "<|speaker:0|> こんにちは。<|speaker:1|> こんばんは。", "cast", 5);
+    ok &= expect(speak(r, &a, NULL, NULL), SPEECH_OK, NULL, "a scene of the cast's two speakers") && a.n > 0;
+    if (ok) printf("the cast's voices are described by their speakers, and a scene of both spoke %zu samples\n", a.n);
+    // The model keeps the head of the prompt of the voice it spoke last: a request in another voice, then the first
+    // voice's again, speaks the same samples as when its head was run first.
+    Audio first = {NULL, 0, 0}, other = {NULL, 0, 0}, again = {NULL, 0, 0};
+    ok &= expect(speak(new_request(model, "はい、そうです。", "made", 9), &first, NULL, NULL), SPEECH_OK, NULL, "a request in the voice made") &&
+          expect(speak(new_request(model, "はい、そうです。", "cast", 9), &other, NULL, NULL), SPEECH_OK, NULL, "the same request in the cast") &&
+          expect(speak(new_request(model, "はい、そうです。", "made", 9), &again, NULL, NULL), SPEECH_OK, NULL, "the first request again");
+    if (ok && (first.n != again.n || memcmp(first.samples, again.samples, first.n * sizeof(float)) != 0)) {
+        fprintf(stderr, "FAIL: a voice's request spoken again after another voice's differs from when it was spoken first\n");
+        ok = 0;
+    } else if (ok) {
+        printf("a voice's request spoken again after another voice's gave the same %zu samples\n", again.n);
+    }
+    free(first.samples);
+    free(other.samples);
+    free(again.samples);
+    free(a.samples);
     return ok ? 0 : 1;
 }
 
@@ -361,17 +449,19 @@ static int check_threads(speech_model * model, const char * voice) {
 
 /** The checks of a loaded synthesis model, which main frees whatever they find. */
 static int check_model(speech_model * model, const char * model_path, const char * out_wav, char ** names, char ** paths, size_t n_voices,
-                       int made) {
+                       int made, const char * recording) {
     if (check_info_matches(model_path, model) != 0) return 1;
     speech_model_info * info = NULL;
     if (speech_model_get_info(model, &info) != SPEECH_OK) return fail("speech_model_get_info");
-    const int irodori = speech_model_info_voice_files(info);
+    const int irodori = !strcmp(speech_model_info_architecture(info), "irodori-tts");
+    const int drama3 = !strcmp(speech_model_info_architecture(info), "drama3");
     if (speech_model_info_task(info) != SPEECH_TASK_SYNTHESIS || speech_model_info_max_text_tokens(info) == 0 ||
-        (irodori && (!speech_model_info_voice_codec(info) || n_voices == 0)) || (!irodori && speech_model_info_voice_count(info) == 0)) {
+        (irodori && (!speech_model_info_voice_codec(info) || n_voices == 0)) || (!irodori && speech_model_info_voice_count(info) == 0) ||
+        speech_model_info_voice_recordings(info) != irodori) {
         fprintf(stderr, "FAIL: a synthesis model is not described as speech.h declares, or Irodori-TTS was given no voice\n");
         return 1;
     }
-    if (check_voices(model, model_path, names, paths, n_voices, irodori) != 0 || check_option_refusals(model) != 0) return 1;
+    if (check_voices(model, model_path, names, paths, n_voices, recording) != 0 || check_option_refusals(model) != 0) return 1;
     speech_model_info_free(info);
     if (speech_model_get_info(model, &info) != SPEECH_OK) return fail("speech_model_get_info");
     const int rate = speech_model_info_sample_rate(info);
@@ -402,7 +492,7 @@ static int check_model(speech_model * model, const char * model_path, const char
         return 1;
     }
     printf("the drawn seed %lld gives the same %zu samples again\n", (long long) seed, again.n);
-    if (made) {
+    if (made && irodori) {
         Audio embedded = {NULL, 0, 0};
         if (speak(new_request(model, SENTENCE, "embedded", 7), &embedded, NULL, NULL) != SPEECH_OK || embedded.n == 0) {
             return fail("a request in the voice of an embedding");
@@ -441,8 +531,10 @@ static int check_model(speech_model * model, const char * model_path, const char
 
     if (check_defaults(model, info, voice) != 0) return 1;
     if (irodori ? check_irodori(model, info, voice) != 0
-                : check_qwen3_tts(model, info, voice) != 0 || check_qwen3_tts_sampling(model, voice) != 0 ||
-                      check_qwen3_tts_instructions(model, info, voice) != 0) {
+        : drama3 ? check_length_limits(model, info, voice) != 0 || check_drama3_sampling(model, voice) != 0 || check_drama3_experts(model, info, voice) != 0 ||
+                       check_drama3_cast(model, info, made)
+                 : check_length_limits(model, info, voice) != 0 || check_qwen3_tts_sampling(model, voice) != 0 ||
+                       check_qwen3_tts_instructions(model, info, voice) != 0) {
         return 1;
     }
     if (check_threads(model, voice) != 0) return 1;
@@ -458,7 +550,7 @@ int main(int argc, char ** argv) {
     if (argc < 3) {
         fprintf(stderr,
                 "usage: %s <model.gguf> <out.wav> [--device NAME] [--voice NAME=FILE]... "
-                "[--make-voice <reference.wav> <voice.gguf>]\n"
+                "[--make-voice <reference.wav> <voice.gguf>] [--make-drama3-voice <reference.wav> <transcript> <voice.gguf>]\n"
                 "       %s transcribe <model.gguf> <dump folder>... [--device NAME]\n"
                 "       %s detect <model.gguf> <dump folder>... [--device NAME]\n",
                 argv[0], argv[0], argv[0]);
@@ -475,7 +567,7 @@ int main(int argc, char ** argv) {
     if (speech_load_params_new(&params) != SPEECH_OK) return fail("speech_load_params_new");
     char * names[MAX_VOICES], * paths[MAX_VOICES];
     size_t n_voices = 0;
-    const char * reference = NULL, * made = NULL;
+    const char * reference = NULL, * made = NULL, * transcript = NULL;
     for (int i = 3; i < argc; i++) {
         if (!strcmp(argv[i], "--device") && i + 1 < argc) {
             if (speech_load_params_set_device(params, argv[++i]) != SPEECH_OK) return fail("speech_load_params_set_device");
@@ -491,12 +583,24 @@ int main(int argc, char ** argv) {
         } else if (!strcmp(argv[i], "--make-voice") && i + 2 < argc) {
             reference = argv[++i];
             made = argv[++i];
+        } else if (!strcmp(argv[i], "--make-drama3-voice") && i + 3 < argc) {
+            reference = argv[++i];
+            transcript = argv[++i];
+            made = argv[++i];
         } else {
             fprintf(stderr, "unknown or incomplete option %s\n", argv[i]);
             return 2;
         }
     }
-    if (made) {
+    if (made && transcript) {
+        if (check_drama3_voices(model_path, reference, transcript, made, params) != 0) return 1;
+        static char cast[4096];
+        snprintf(cast, sizeof cast, "%s.cast.gguf", made);
+        names[n_voices] = (char *) "made";
+        paths[n_voices++] = (char *) made;
+        names[n_voices] = (char *) "cast";
+        paths[n_voices++] = cast;
+    } else if (made) {
         const double start = now_seconds();
         if (speech_voice_make(model_path, reference, made, params) != SPEECH_OK) return fail("speech_voice_make");
         printf("made the voice file %s in %.3f s\n", made, now_seconds() - start);
@@ -514,7 +618,7 @@ int main(int argc, char ** argv) {
     if (speech_model_load(model_path, params, &model) != SPEECH_OK) return fail("speech_model_load");
     speech_load_params_free(params);
     printf("loaded without a warm-up in %.2f s\n", now_seconds() - start);
-    const int status = check_model(model, model_path, argv[2], names, paths, n_voices, made != NULL);
+    const int status = check_model(model, model_path, argv[2], names, paths, n_voices, made != NULL, reference);
     speech_model_free(model);
     if (status == 0) {
         printf("log messages: %d debug, %d info, %d warnings, %d errors\n", log_counts[0], log_counts[1], log_counts[2], log_counts[3]);

@@ -115,8 +115,11 @@ CommandLine parse_command_line(const Command & command, const std::vector<std::s
 /** Whether `args` asks for the subcommand's help with --help or -h before any "--". */
 bool asks_for_help(const std::vector<std::string> & args);
 
-/** The subcommand's --help: its usage, what it does, its flags and, where it takes them, the request options. */
-std::string command_help(const Command & command);
+/**
+ * The subcommand's --help: its usage, what it does, its flags and, where it takes them, the request options, colored
+ * where `stream`, on which it is written, has colors.
+ */
+std::string command_help(const Command & command, FILE * stream);
 
 /** Flags that several subcommands share. */
 Flag device_flag(const std::string & help);

@@ -10,18 +10,13 @@
 #include <thread>
 #include <vector>
 
-#ifdef _WIN32
-#include <io.h>
-#else
-#include <unistd.h>
-#endif
-
 #include "cache.h"
 #include "curl.h"
 #include "failure.h"
 #include "ggml.h"
 #include "sha256.h"
 #include "speech.h"
+#include "terminal.h"
 
 namespace fs = std::filesystem;
 
@@ -67,7 +62,10 @@ Failure discarded(const fs::path & part, const std::string & why) {
     return io_failure(why + "; the fetched bytes are removed, and the same command fetches the file again from its start");
 }
 
-/** The progress of a fetch on stderr: one line rewritten on a terminal, a line for each tenth elsewhere. */
+/**
+ * The progress of a fetch on stderr: on a terminal one line, a bar with the share, the sizes, the rate and the time
+ * left, rewritten as it moves and erased once the file is whole; elsewhere a line for each tenth.
+ */
 class StderrProgress {
 public:
     ~StderrProgress() {
@@ -84,9 +82,22 @@ public:
         char line[96];
         std::snprintf(line, sizeof line, "%s of %s, %d%%, %.1f MB/s", megabytes(done).c_str(), megabytes(total).c_str(), (int) (done * 100 / total), rate);
         if (terminal_) {
-            std::fprintf(stderr, "\r  %-60s", line);
             open_ = done != total;
-            if (!open_) std::fprintf(stderr, "\n");
+            if (!open_) {
+                std::fputs("\r\033[K", stderr);
+                return true;
+            }
+            char shown[96];
+            std::snprintf(shown, sizeof shown, "%3d%%  %s of %s  %.1f MB/s", (int) (done * 100 / total), megabytes(done).c_str(), megabytes(total).c_str(), rate);
+            std::string text = shown;
+            if (rate > 0) text += "  " + std::to_string((long long) ((total - done) / (rate * 1e6)) + 1) + " s left";
+            // The line stays narrower than the terminal, since a line that wraps is no longer the one "\r" returns to: the
+            // bar takes what the numbers leave, up to 30 columns, and goes where fewer than 10 are left.
+            const int room = terminal::columns(stderr) - 1 - 2;
+            const int width = std::min(30, room - 2 - (int) text.size());
+            const std::string bar = width >= 10 ? terminal::bar(done, total, width) + "  " : "";
+            std::fprintf(stderr, "\r\033[K  %s%s", bar.c_str(), terminal::paint(terminal::Color::Gray, terminal::head(text, width >= 10 ? (int) text.size() : room)).c_str());
+            std::fflush(stderr);
         } else if (tenth > tenth_) {
             std::fprintf(stderr, "  %s\n", line);
         }
@@ -95,11 +106,7 @@ public:
     }
 
 private:
-#ifdef _WIN32
-    const bool terminal_ = _isatty(_fileno(stderr));
-#else
-    const bool terminal_ = isatty(fileno(stderr));
-#endif
+    const bool terminal_ = terminal::draws();
     bool open_ = false;
     int tenth_ = 0;
     std::optional<std::pair<uint64_t, Clock::time_point>> first_;
@@ -187,13 +194,16 @@ fs::path fetch_model(const CatalogChoice & choice, const FetchProgress & progres
 
 fs::path fetch_on_stderr(const CatalogChoice & choice) {
     const fs::path path = model_path(choice);
-    std::fprintf(stderr, "fetching %s, %s (%s), from https://huggingface.co/%s into %s\n", choice_name(choice).c_str(), choice.file->file.c_str(),
-                 gigabytes(choice.file->size).c_str(), choice.model->repository.c_str(), path.parent_path().u8string().c_str());
+    const std::string from = ", from https://huggingface.co/" + choice.model->repository + " into " + path.parent_path().u8string();
+    std::fprintf(stderr, "%s\n", terminal::marked(terminal::Mark::Fetch, "Fetching " + choice_name(choice) + ", " + choice.file->file + " (" +
+                                                                            gigabytes(choice.file->size) + ")" + terminal::paint(terminal::Color::Gray, from))
+                                     .c_str());
     const auto t0 = Clock::now();
     StderrProgress progress;
-    fetch_model(choice, std::ref(progress), [](const std::string & note) { std::fprintf(stderr, "%s\n", note.c_str()); });
-    std::fprintf(stderr, "fetched %s in %.0f s and checked its SHA-256\n", choice_name(choice).c_str(),
-                 std::chrono::duration<double>(Clock::now() - t0).count());
+    fetch_model(choice, std::ref(progress), [](const std::string & note) { std::fprintf(stderr, "  %s\n", note.c_str()); });
+    char took[64];
+    std::snprintf(took, sizeof took, " in %.0f s and checked its SHA-256", std::chrono::duration<double>(Clock::now() - t0).count());
+    std::fprintf(stderr, "%s\n", terminal::marked(terminal::Mark::Done, "Fetched " + choice_name(choice) + took).c_str());
     return path;
 }
 

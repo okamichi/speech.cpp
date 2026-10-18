@@ -67,35 +67,35 @@ On the 4,483 utterances of Common Voice 8.0's Japanese test set, trimmed to the 
 
 ## Weight types
 
-Each model comes in four types; `NAME:TYPE` fetches one (`speech asr qwen3-asr-1.7b:q6_k`). speech-bench on 2026-10-14,
-two rounds, on an Apple M5 with Metal and an RTX 2080 with Vulkan: the CER on the first 500 utterances of Common Voice
+Each model comes in four types; `NAME:TYPE` fetches one (`speech asr qwen3-asr-1.7b:q6_k`). speech-bench, two
+rounds, on an Apple M5 with Metal and an RTX 2080 with Vulkan on 2026-10-16: the CER on the first 500 utterances of Common Voice
 8.0's Japanese test set, on which the CER is higher than on the whole set, and after the slash the CER accepting other
 spellings of the same words. The CER is the M5's, and the RTX 2080's is within 0.1 points of it. The peak memory is the
 process's on the M5, whose GPU shares it, and the VRAM the video memory in use on the RTX 2080.
 
 | Model | Type | File | CER | Peak memory, M5 | VRAM, RTX 2080 | RTFx, M5 / RTX 2080 |
 |---|---|---|---|---|---|---|
-| 0.6B | Q8_0 | 0.84 GB | 14.15% / 6.55% | 1.01 GB | 1.13 GB | 28 / 50 |
-| 0.6B | Q6_K | 0.68 GB | 14.41% / 6.55% | 0.85 GB | 0.97 GB | 30 / 48 |
-| 0.6B | Q5_K | 0.59 GB | 14.94% / 7.04% | 0.76 GB | 0.88 GB | 33 / 57 |
-| 0.6B | Q4_K | 0.51 GB | 17.04% / 8.64% | 0.67 GB | 0.79 GB | 35 / 57 |
-| 1.7B | Q8_0 | 2.18 GB | 12.41% / 4.35% | 2.35 GB | 2.47 GB | 12 / 26 |
-| 1.7B | Q6_K | 1.68 GB | 12.17% / 4.28% | 1.86 GB | 1.98 GB | 13 / 34 |
-| 1.7B | Q5_K | 1.41 GB | 12.75% / 4.67% | 1.58 GB | 1.71 GB | 14 / 35 |
-| 1.7B | Q4_K | 1.16 GB | 13.93% / 5.63% | 1.33 GB | 1.45 GB | 16 / 39 |
+| 0.6B | Q8_0 | 0.84 GB | 14.17% / 6.60% | 1.01 GB | 1.13 GB | 34 / 50 |
+| 0.6B | Q6_K | 0.68 GB | 14.41% / 6.55% | 0.85 GB | 0.97 GB | 38 / 48 |
+| 0.6B | Q5_K | 0.59 GB | 14.89% / 7.04% | 0.76 GB | 0.88 GB | 41 / 57 |
+| 0.6B | Q4_K | 0.51 GB | 17.13% / 8.65% | 0.68 GB | 0.79 GB | 45 / 57 |
+| 1.7B | Q8_0 | 2.18 GB | 12.43% / 4.35% | 2.35 GB | 2.47 GB | 14 / 26 |
+| 1.7B | Q6_K | 1.68 GB | 12.17% / 4.28% | 1.86 GB | 1.98 GB | 16 / 34 |
+| 1.7B | Q5_K | 1.41 GB | 12.75% / 4.67% | 1.59 GB | 1.71 GB | 18 / 35 |
+| 1.7B | Q4_K | 1.16 GB | 14.03% / 5.73% | 1.33 GB | 1.45 GB | 21 / 39 |
 
 In the 0.6B model's Q6_K, Q5_K and Q4_K files, the encoder and the projector stay Q8_0.
 
 ## Speed
 
-speech-bench on 2026-10-14: the 4,483 utterances of Common Voice 8.0's Japanese test set (4,479 kept by VAD), Q8_0,
+speech-bench on 2026-10-16: the 4,483 utterances of Common Voice 8.0's Japanese test set (4,479 kept by VAD), Q8_0,
 one utterance at a time, the language left to the model, one round. The RTFx is the seconds of audio over the seconds
 they took, so larger is faster.
 
 | Model | p50 latency, M5 / RTX 2080 | p90 latency, M5 / RTX 2080 | RTFx, M5 / RTX 2080 |
 |---|---|---|---|
-| 0.6B | 0.127 s / 0.073 s | 0.220 s / 0.133 s | 27 / 46 |
-| 1.7B | 0.312 s / 0.140 s | 0.548 s / 0.257 s | 11 / 24 |
+| 0.6B | 0.107 s / 0.072 s | 0.188 s / 0.131 s | 32 / 47 |
+| 1.7B | 0.257 s / 0.140 s | 0.456 s / 0.257 s | 13 / 24 |
 
 Beside llama.cpp b11246 with ggml-org's Q8_0 files, on the first 500 of those utterances in three rounds on the same
 days: on the M5, speech.cpp's p50 latencies are 4% to 6% lower and llama.cpp's p90 2% lower; on the RTX 2080,

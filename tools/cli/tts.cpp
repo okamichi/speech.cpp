@@ -27,6 +27,7 @@
 #include "fetch.h"
 #include "ggml.h"
 #include "sentences.h"
+#include "terminal.h"
 
 // speech tts: speaks the text, or each non-empty line of stdin as a text of its own, into one 16-bit mono WAVE at the
 // model's rate, written as the audio is made so that a player reading stdout starts before the rest is made; a model
@@ -159,6 +160,11 @@ private:
 struct Speaking {
     WavWriter & wav;
     Clock::time_point start;
+    /** The line that shows the text being spoken, what it says before the audio made, and the model's rate. */
+    terminal::Status & status;
+    std::string doing;
+    double rate;
+    uint64_t samples = 0;
     double first_audio = -1;
     std::optional<Failure> failed;
 };
@@ -173,6 +179,10 @@ int on_audio(const float * s, size_t n, void * user_data) {
         r.failed = e;
         return 1;
     }
+    r.samples += n;
+    char made[48];
+    std::snprintf(made, sizeof made, ", %.1f s of audio", r.samples / r.rate);
+    r.status.set(r.doing + made);
     return 0;
 }
 
@@ -201,11 +211,13 @@ int run_tts(const CommandLine & line, FILE * out) {
 
     // A model named for the first time is fetched here, before the load is timed.
     const std::string path = model_file(line.args[0]);
+    require_options(path, line);
     const auto t0 = Clock::now();
+    terminal::Status loading("Loading " + argument_label(line.args[0]));
     const Model model = load_model(path, line.loading(false));
     const ModelInfo info = model_info(model.get());
     const speech_model_info * m = info.get();
-    std::fprintf(stderr, "load time %.2f s: %s on %s\n", seconds_since(t0), speech_model_info_name(m), speech_model_info_device(m));
+    loading.done(loaded_line({m}, seconds_since(t0)));
     if (verbose) {
         std::fprintf(stderr, "speech.cpp %s, %d Hz, voices: %s; languages: %s\n", speech_version(), speech_model_info_sample_rate(m),
                      joined(speech_model_info_voice_count(m), speech_model_info_voice_name, m).c_str(),
@@ -224,27 +236,35 @@ int run_tts(const CommandLine & line, FILE * out) {
     Cancellation cancellation;
     while (from_stdin ? next_line(text, first_line) : count == 0) {
         count++;
-        const std::string where = from_stdin ? "line " + std::to_string(count) + ": " : std::string();
-        Speaking speaking{wav, Clock::now()};
+        // A text is named by its line of stdin, or by the file it goes to.
+        const std::string what = from_stdin ? "line " + std::to_string(count) : *output == "-" ? "" : *output;
+        const std::string where = what.empty() ? "" : what + ": ";
+        const std::string doing = what.empty() ? "Speaking" : "Speaking " + what;
+        terminal::Status status(doing);
+        Speaking speaking{wav, Clock::now(), status, doing, rate};
         std::optional<Spoken> spoken;
         try {
             spoken = speak_text(model.get(), text, line.options, Split::Sentences, on_audio, nullptr, &speaking, cancellation);
             if (speaking.failed) throw *speaking.failed;
         } catch (const Failure & e) {
-            throw Failure(e.code(), e.option(), where + e.what());
+            // A failure names the line of stdin at fault; a text given as an argument is the only one.
+            throw Failure(e.code(), e.option(), (from_stdin ? where : "") + e.what());
         }
         const uint64_t made = spoken->samples;
         const double total = seconds_since(speaking.start), audio = (double) made / rate;
         const speech_stop stop = spoken->stop;
-        const std::string requests = spoken->requests > 1 ? " in " + std::to_string(spoken->requests) + " requests" : "";
-        std::fprintf(stderr, "%s%.2f s of audio%s: time to first audio %.3f s, total %.3f s, RTFx %.1f", where.c_str(), audio,
-                     requests.c_str(), speaking.first_audio, total, audio / total);
-        if (verbose) std::fprintf(stderr, ", seed %lld, %s", (long long) spoken->seed, speech_stop_name(stop));
-        std::fprintf(stderr, "\n");
+        const std::string requests = spoken->requests > 1 ? " from " + std::to_string(spoken->requests) + " requests" : "";
+        char said[160];
+        std::snprintf(said, sizeof said, "%.2f s of audio%s in %.3f s, RTFx %.1f, time to first audio %.3f s", audio, requests.c_str(), total,
+                      audio / total, speaking.first_audio);
+        std::string details = said;
+        if (verbose) details += ", seed " + std::to_string((long long) spoken->seed) + ", " + speech_stop_name(stop);
+        status.done(where + terminal::paint(terminal::Color::Gray, details), terminal::Mark::Audio);
         if (stop == SPEECH_STOP_MAX_SECONDS) {
-            std::fprintf(stderr, "%sthe speech reached --max-seconds and was stopped there\n", where.c_str());
+            std::fprintf(stderr, "%s\n", terminal::marked(terminal::Mark::Warning, where + "the speech reached --max-seconds and was stopped there").c_str());
         } else if (stop == SPEECH_STOP_MODEL_LIMIT) {
-            std::fprintf(stderr, "%sthe speech reached the longest the model makes and was stopped there\n", where.c_str());
+            std::fprintf(stderr, "%s\n",
+                         terminal::marked(terminal::Mark::Warning, where + "the speech reached the longest the model makes and was stopped there").c_str());
             model_limit = true;
         }
         samples += made;
@@ -254,7 +274,9 @@ int run_tts(const CommandLine & line, FILE * out) {
     wav.finish();
     file.keep();
     if (from_stdin) {
-        std::fprintf(stderr, "%d lines, %.2f s of audio in %.3f s, RTFx %.1f\n", count, samples / rate, busy, samples / rate / busy);
+        char said[160];
+        std::snprintf(said, sizeof said, "%d lines, %.2f s of audio in %.3f s, RTFx %.1f", count, samples / rate, busy, samples / rate / busy);
+        std::fprintf(stderr, "%s\n", terminal::marked(terminal::Mark::Done, std::string(*output == "-" ? "" : *output + ": ") + said).c_str());
     }
     return model_limit ? 3 : 0;
 }

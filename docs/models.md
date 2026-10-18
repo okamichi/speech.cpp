@@ -15,6 +15,7 @@ first time.
 | [`irodori-tts-mf`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF) | synthesis | ja | `Irodori-TTS-866M-MF-v4.1-F16.gguf`, 1.92 GB | [Irodori-TTS](models/irodori-tts.md) |
 | [`irodori-tts`](https://huggingface.co/sakasegawa/Irodori-TTS-v4.1-Small-GGUF) | synthesis | ja | `Irodori-TTS-859M-v4.1-F16.gguf`, 1.91 GB | [Irodori-TTS](models/irodori-tts.md) |
 | [`irodori-tts-large`](https://huggingface.co/sakasegawa/Irodori-TTS-v4-Large-GGUF) | synthesis | ja | `Irodori-TTS-3.4B-v4-Q8_0.gguf`, 3.88 GB | [Irodori-TTS](models/irodori-tts.md) |
+| [`drama-3`](https://huggingface.co/sakasegawa/drama-3-GGUF) | synthesis | 83 languages | `Drama-35B-A3B-v3-Q4_K.gguf`, 20.8 GB | [Drama 3](models/drama3.md), built with Fish Audio |
 | [`qwen3-asr-0.6b`](https://huggingface.co/sakasegawa/Qwen3-ASR-0.6B-GGUF) | recognition | 30 languages | `Qwen3-ASR-0.6B-Q8_0.gguf`, 0.84 GB | [Qwen3-ASR](models/qwen3-asr.md) |
 | [`qwen3-asr-1.7b`](https://huggingface.co/sakasegawa/Qwen3-ASR-1.7B-GGUF) | recognition | 30 languages | `Qwen3-ASR-1.7B-Q8_0.gguf`, 2.18 GB | [Qwen3-ASR](models/qwen3-asr.md) |
 | [`reazonspeech-v2`](https://huggingface.co/sakasegawa/reazonspeech-nemo-v2-GGUF) | recognition | ja | `reazonspeech-nemo-619M-v2-Q8_0.gguf`, 0.66 GB | [FastConformer](models/fastconformer.md) |
@@ -91,12 +92,15 @@ A synthesis request needs a `voice`.
 - **Irodori-TTS** speaks in the voice of a reference recording that you add, or with the voice `none`, with which the
   model chooses a voice itself ([models/irodori-tts.md](models/irodori-tts.md#voices)). A voice is added from a WAVE
   file, which is encoded each time it is added, or from a voice file that `speech voice` made once.
+- **Drama 3** speaks with the voice `none`, with which the model chooses a voice for each speaker the text names, or
+  in the voices of a voice file that `speech voice` made of recordings and their transcripts, each given to a speaker
+  ([models/drama3.md](models/drama3.md#voices)). It takes a voice file alone, not a WAVE file.
 
 | Entry point | How to add a voice |
 |---|---|
 | `speech tts` | `--add-voice NAME=FILE`, repeatable |
 | `speech worker` | `--add-voice NAME=FILE`, or the request `add_voice` |
-| `speech serve` | `--add-voice NAME=FILE`, a recording on the page, or [the Irodori voice API](server.md#reference-voices); `--voices-dir DIR` retains uploads |
+| `speech serve` | `--add-voice NAME=FILE`, a recording on the page (Irodori-TTS), or [the Irodori voice API](server.md#reference-voices); `--voices-dir DIR` retains uploads |
 | C API | `speech_voice_add()` |
 
 A voice's name is case-sensitive, and may be neither a voice of the model nor `none`.
@@ -106,8 +110,8 @@ A voice's name is case-sensitive, and may be neither a voice of the model nor `n
 - A model's languages are BCP 47 tags: two letters, or three for a language without a two-letter code (`yue`, `fil`).
 - A request's `language` is one of them, a region or script of one (`ja-JP`, `zh-Hant`), or `auto`, the default, which
   leaves the choice to the model. Any other language is refused.
-- Qwen3-TTS and Qwen3-ASR are steered by the language. Irodori-TTS and the FastConformer models only check it against
-  their languages and do not use it. Silero VAD has no languages and takes `auto` alone.
+- Qwen3-TTS and Qwen3-ASR are steered by the language. Irodori-TTS, Drama 3 and the FastConformer models only check it
+  against their languages and do not use it. Silero VAD has no languages and takes `auto` alone.
 - Qwen3-ASR's results say which language it heard.
 
 ## Files on Hugging Face

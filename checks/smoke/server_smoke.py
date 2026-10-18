@@ -8,7 +8,8 @@ speech.audio.done with the seed, the samples and the stop reason, a drawn seed t
 with its status, type, param and code: the server's own (a member it does not have, a value of the wrong type, no
 input, a format it does not give, a body that is not JSON) and the library's mapped by category (a value it does not
 take, out of range or not taken, an empty or too long input, a voice left out), on a wav and on a stream, Qwen3-TTS's
-sampling options, and OpenAI's instructions followed by a model that takes them and refused by one that does not. For a
+and Drama 3's sampling options, and OpenAI's instructions followed by a model that takes them and refused by one that
+does not. For a
 recognition model: json and text with X-Speech-Stop for each dump of reference/fastconformer/dump.py or
 reference/qwen3-asr/dump.py, each other request a Qwen3-ASR dump holds with its language and its prompt as form fields
 and each decoding other than the default that a FastConformer dump holds as the form field decoding, json without any
@@ -21,8 +22,8 @@ and audio the library cannot take.
 For a synthesis model, also that a request option given to the server as a flag (--seed, and --tts.seed for the
 synthesis model alone) is the default of a request that does not set it, listed in /v1/models' defaults beside the
 model information as it was, and that one no model given takes, or one for a task without a model, stops the server;
-a text of one sentence, and on a model that reads a text in one request a text of two,
-spoken as the worker speaks it in one request; and on a model that speaks a text a sentence at a time (Irodori-TTS),
+a text of one sentence, and on a model that reads a text in one request a text of two, spoken as the worker speaks it
+in one request, the server stopped meanwhile so that the model is held once at a time; and on a model that speaks a text a sentence at a time (Irodori-TTS),
 a paragraph of thirty sentences, past its tokens and four times its 30 s, as a pcm stream whose first bytes come before
 a quarter of the whole has passed, the samples of the wav of the same seed, one request a sentence in the log, a client
 that goes away stopping it before the rest is made, and with --asr a recognition model that hears it within
@@ -79,8 +80,16 @@ added = [o.split("=", 1)[0] for i, o in enumerate(options) if i > 0 and options[
 load = [o for i, o in enumerate(options) if o in ("--device", "--threads") or (i and options[i - 1] in ("--device", "--threads"))]
 ORIGIN = "http://localhost:5173"
 
-server = Server(speech, [model, *([vad] if vad else []), "--cors-origin", ORIGIN, *options])
-call, post_json, transcribe = server.call, server.post_json, server.transcribe
+
+
+def start_server():
+    """Starts the server of the models given, the one whose calls the checks make."""
+    global server, call, post_json, transcribe
+    server = Server(speech, [model, *([vad] if vad else []), "--cors-origin", ORIGIN, *options])
+    call, post_json, transcribe = server.call, server.post_json, server.transcribe
+
+
+start_server()
 status, _, body = call("GET", "/health")
 assert status == 200 and json.loads(body)["status"] == "ok", body
 status, _, body = call("GET", "/v1/models")
@@ -163,8 +172,12 @@ elif info["task"] == "synthesis":
     assert 0 <= drawn < 2 ** 53 and wav_data(post_json("/v1/audio/speech", {"input": TEXT, "voice": voice, "seed": drawn})[2]) == wav_data(body)
     print(f"a request without a seed drew {drawn}, which repeats the audio")
     # A request option given to the server as a flag is the default of the requests that do not set it, and one that no
-    # model given takes stops the server before it listens.
+    # model given takes stops the server before it listens. The checks that start the model in a process of their own
+    # stop the server first, so that the model is held once at a time: Drama 3's Q4_K file fills an Apple M5's GPU alone.
     assert entry["defaults"] == {}, entry
+    out = server.stop()
+    if out:
+        raise SystemExit(f"the server wrote to stdout: {out[:200]!r}")
     for flag in ("--seed", "--tts.seed"):
         seeded = Server(speech, [model, *options, flag, "11"])
         status, headers, body = seeded.post_json("/v1/audio/speech", {"input": TEXT, "voice": voice})
@@ -182,12 +195,16 @@ elif info["task"] == "synthesis":
     # A text of one sentence is one request, and so is a text of several on a model that reads a text in one request.
     by_sentence = speaks_by_sentence(info)
     TWO = TEXT + "二つ目の文です。"
+    texts = [("one", TEXT)] + ([] if by_sentence else [("two", TWO)])
     w = Worker(speech, model, options)
-    for id, text in [("one", TEXT)] + ([] if by_sentence else [("two", TWO)]):
+    spoken = {}
+    for id, text in texts:
         w.request({"type": "synthesize", "id": id, "text": text, "voice": voice, "seed": 11})
-        spoken = b"".join(base64.b64decode(m["pcm"]) for m in w.until(id) if m["type"] == "chunk")
-        assert wav_data(post_json("/v1/audio/speech", {"input": text, "voice": voice, "seed": 11})[2]) == spoken, f"{id}: not the worker's audio"
+        spoken[id] = b"".join(base64.b64decode(m["pcm"]) for m in w.until(id) if m["type"] == "chunk")
     w.close()
+    start_server()
+    for id, text in texts:
+        assert wav_data(post_json("/v1/audio/speech", {"input": text, "voice": voice, "seed": 11})[2]) == spoken[id], f"{id}: not the worker's audio"
     print("a text of one sentence" + ("" if by_sentence else ", and one of two,") + " gives the worker's audio of one request")
     if by_sentence:
         long = {"input": "".join(PARAGRAPH), "voice": voice, "seed": 5}
@@ -249,6 +266,13 @@ elif info["task"] == "synthesis":
         expect_error(post_json("/v1/audio/speech", {"input": "あ。", "voice": voice, "do_sample": False, "temperature": 0.5}), 400,
                      "invalid_value", "temperature", "a temperature that does not draw")
         expect_error(post_json("/v1/audio/speech", {"input": "あ。", "voice": voice, "top_p": 2}), 400, "unsupported_value", "top_p", "top_p 2")
+    elif info["architecture"] == "drama3":
+        status, headers, body = post_json("/v1/audio/speech", {"input": TEXT, "voice": voice, "max_seconds": 0.5})
+        assert status == 200 and headers["x-speech-stop"] == "max_seconds" and len(wav_data(body)) <= rate, headers
+        print("max_seconds 0.5: X-Speech-Stop max_seconds")
+        expect_error(post_json("/v1/audio/speech", {"input": "あ。", "voice": voice, "speed": 1.5}), 400, "unsupported_parameter", "speed",
+                     "speed on Drama 3")
+        expect_error(post_json("/v1/audio/speech", {"input": "あ。", "voice": voice, "top_p": 2}), 400, "unsupported_value", "top_p", "top_p 2")
     else:
         expect_error(post_json("/v1/audio/speech", {"input": "あ。", "voice": voice, "speed": 5}), 400, "unsupported_value", "speed",
                      "speed 5")
@@ -280,6 +304,12 @@ elif info["task"] == "synthesis":
                  "response_format", "sse with wav")
     expect_error(call("POST", "/v1/audio/speech", b"{not json", {"Content-Type": "application/json"}), 400, None, None, "a body that is not JSON")
     expect_error(post_json("/v1/audio/speech", {"input": "あ。", "voice": "no-such-voice"}), 400, "unsupported_value", "voice", "an unknown voice")
+    # The message of an error a client caused carries what it sent, and the log writes a line break in it as an escape
+    # rather than a line of the client's own.
+    forged = "no-such-voice\n12:34:56  POST /forged  200"
+    expect_error(post_json("/v1/audio/speech", {"input": "あ。", "voice": forged}), 400, "unsupported_value", "voice", "a voice with a line break")
+    server.wait_for_line(lambda line: "no-such-voice\\n12:34:56" in line, "the voice with its line break escaped")
+    assert not any(line.startswith("POST /forged") for line in server.logged()), "a client's line break wrote a line of the log"
     expect_error(post_json("/v1/audio/speech", {"input": "", "voice": voice}), 400, "invalid_value", "input", "an empty input")
     expect_error(post_json("/v1/audio/speech", {"input": "あ。", "voice": voice, "timestamps": True}), 400, "unsupported_parameter",
                  "timestamps", "timestamps")
@@ -344,6 +374,12 @@ else:
         print(f"{name}: json, text and verbose_json give the expected text and stop, verbose_json no language and {len(segments)} segments joining "
               f"into it, with or without a segment granularity{others}")
     wav, want, samples = first
+    if first:
+        # A request's log line gives the status sent, which a range of the answer makes 206.
+        status, _, body = transcribe([("response_format", "text")], [("file", "range.wav", first[0])], {"Range": "bytes=0-1"})
+        assert status == 206 and body == first[1].encode()[:2], (status, body)
+        server.wait_for_line(lambda line: line.startswith("POST /v1/audio/transcriptions ") and " 206 " in line, "a transcription answered with 206")
+        print("a transcription with a Range header: 206, which its log line gives")
     status, _, body = transcribe([], [("file", "x.wav", wav_file([x for x in samples for _ in range(3)], rate * 3))])
     assert status == 200, body
     print(f"WAV at {rate * 3} Hz: {'the dump' if json.loads(body)['text'] == want else 'another'}'s text")

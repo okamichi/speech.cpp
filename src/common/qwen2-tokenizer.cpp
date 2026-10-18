@@ -32,10 +32,14 @@ bool in_ranges(const CodepointRange (&ranges)[N], uint32_t cp) {
 
 bool is_letter(uint32_t cp) { return in_ranges(kLetters, cp); }
 bool is_number(uint32_t cp) { return in_ranges(kNumbers, cp); }
+bool is_mark(uint32_t cp) { return in_ranges(kMarks, cp); }
 bool is_space(uint32_t cp) { return in_ranges(kSpaces, cp); }
 bool is_crlf(uint32_t cp) { return cp == '\r' || cp == '\n'; }
-/** Neither whitespace, a letter nor a number: [^\s\p{L}\p{N}]. */
-bool is_other(uint32_t cp) { return !is_space(cp) && !is_letter(cp) && !is_number(cp); }
+
+const char * const kQwen2Regex =
+    "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+const char * const kQwen35Regex =
+    "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
 
 std::vector<uint32_t> code_points(const std::string & text) {
     std::optional<std::vector<uint32_t>> cps = decode_utf8(text);
@@ -43,9 +47,13 @@ std::vector<uint32_t> code_points(const std::string & text) {
     return std::move(*cps);
 }
 
-/** Length of the pre-token at `i`, following the alternatives of the Qwen2 pattern in order. */
-size_t match_at(const std::vector<uint32_t> & cps, size_t i) {
+/** Length of the pre-token at `i`, following the alternatives of the pattern in order. */
+size_t match_at(const std::vector<uint32_t> & cps, size_t i, Qwen2Pattern pattern) {
     const size_t n = cps.size();
+    // A run of letters, of letters and marks in Qwen3.5's pattern, and what is neither whitespace, a number nor that.
+    const bool marks = pattern == Qwen2Pattern::Qwen35;
+    const auto is_word = [&](uint32_t c) { return is_letter(c) || (marks && is_mark(c)); };
+    const auto is_other = [&](uint32_t c) { return !is_space(c) && !is_number(c) && !is_word(c); };
     auto lower = [](uint32_t c) { return c < 128 ? (uint32_t) std::tolower((int) c) : c; };
     // (?i:'s|'t|'re|'ve|'m|'ll|'d)
     if (cps[i] == '\'' && i + 1 < n) {
@@ -54,18 +62,18 @@ size_t match_at(const std::vector<uint32_t> & cps, size_t i) {
         if (a == 's' || a == 't' || a == 'm' || a == 'd') return 2;
         if ((a == 'r' && b == 'e') || (a == 'v' && b == 'e') || (a == 'l' && b == 'l')) return 3;
     }
-    // [^\r\n\p{L}\p{N}]?\p{L}+
+    // [^\r\n\p{L}\p{N}]?\p{L}+, or [^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+
     {
         size_t j = i;
-        if (!is_letter(cps[j]) && !is_crlf(cps[j]) && !is_number(cps[j]) && j + 1 < n && is_letter(cps[j + 1])) j++;
-        if (is_letter(cps[j])) {
-            while (j < n && is_letter(cps[j])) j++;
+        if (!is_letter(cps[j]) && !is_crlf(cps[j]) && !is_number(cps[j]) && j + 1 < n && is_word(cps[j + 1])) j++;
+        if (is_word(cps[j])) {
+            while (j < n && is_word(cps[j])) j++;
             return j - i;
         }
     }
     // \p{N}
     if (is_number(cps[i])) return 1;
-    // ' ?[^\s\p{L}\p{N}]+[\r\n]*'
+    // ' ?[^\s\p{L}\p{N}]+[\r\n]*', or ' ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*'
     {
         size_t j = i;
         if (cps[j] == ' ' && j + 1 < n && is_other(cps[j + 1])) j++;
@@ -91,7 +99,15 @@ size_t match_at(const std::vector<uint32_t> & cps, size_t i) {
 
 }  // namespace
 
-Qwen2Tokenizer::Qwen2Tokenizer(const ModelFile & m, const std::string & prefix) : tokens_(m.str_array(prefix + ".tokens")) {
+bool qwen2_pattern(const std::string & regex, Qwen2Pattern * pattern) {
+    if (regex == kQwen2Regex) *pattern = Qwen2Pattern::Qwen2;
+    else if (regex == kQwen35Regex) *pattern = Qwen2Pattern::Qwen35;
+    else return false;
+    return true;
+}
+
+Qwen2Tokenizer::Qwen2Tokenizer(const ModelFile & m, const std::string & prefix, Qwen2Pattern pattern)
+    : pattern_(pattern), tokens_(m.str_array(prefix + ".tokens")) {
     for (size_t i = 0; i < tokens_.size(); i++) {
         if (!tokens_[i].empty()) vocab_[tokens_[i]] = (int32_t) i;
     }
@@ -114,7 +130,7 @@ std::vector<std::string> Qwen2Tokenizer::pre_tokenize(const std::string & text) 
     const std::vector<uint32_t> cps = nfc(code_points(text), UnicodeVersion::V9);
     std::vector<std::string> pieces;
     for (size_t i = 0; i < cps.size();) {
-        const size_t len = match_at(cps, i);
+        const size_t len = match_at(cps, i, pattern_);
         pieces.push_back(encode_utf8(std::vector<uint32_t>(cps.begin() + (std::ptrdiff_t) i, cps.begin() + (std::ptrdiff_t) (i + len))));
         i += len;
     }

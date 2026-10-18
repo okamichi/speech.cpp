@@ -125,23 +125,27 @@ truncation and inactive caption/speaker guidance. It defaults to false. After sy
     request. It is off by default; `speech worker` and `speech serve` turn it on.
 - **Model information.** `speech_model_info_open()` reads what a model file says of its model from its metadata, without
   its weights or a device: its identity, architecture and layout, task and sample rate, languages, voices, whether it
-  takes voice files and the codec they must carry, the longest text, the options it takes, its sizes, and every metadata
+  takes voice files, the codec they must carry and whether a recording alone makes one, the longest text, the options it takes, its sizes, and every metadata
   entry. `speech_model_get_info()` gives the same for a loaded model, with the device, the threads in effect and the
   voices added. `speech_model_info_text_tokens()` counts a text's tokens as a synthesis counts them against the longest
   text, so that a caller can split a long text first. `speech_model_info_json()` writes the whole as one JSON object
   (below).
 - **Quantizing.** `speech_quantize()` writes a model file of F32 weights in F16, Q8_0, Q6_K, Q5_K or Q4_K, on the CPU,
   as `speech quantize` does ([cli.md](cli.md#speech-quantize)). Silero VAD's file is F32 alone, and is refused.
-- **Voices.** `speech_voice_add()` adds a voice to a loaded model from a voice file or a reference WAVE file at any rate.
-  `speech_voice_add_with_info()` adds a voice and returns an owned model-information snapshot in one operation.
-  On failure, neither the registered voices nor the output pointer changes. Free the snapshot with
-  `speech_model_info_free()`. Added voices remain in memory until the model is freed.
-  `speech_voice_make()` writes a voice file from a reference, reading only the codec's encoder from the model file.
+- **Voices.** `speech_voice_add()` adds a voice to a loaded model from a voice file, or from a reference WAVE file at any
+  rate where `speech_model_info_voice_recordings()` says so. `speech_voice_add_with_info()` adds a voice and returns
+  the model's information with it in one call; free it with `speech_model_info_free()`. A voice the model refuses
+  changes neither the voices nor the information; a voice it takes stays added even if the information then cannot be
+  made, which is `SPEECH_ERROR_OUT_OF_MEMORY`. Added voices remain in memory until the model is freed.
+  `speech_voice_make()` writes a voice file from a reference, reading only the codec from the model file.
   `speech_voice_make_from()` writes one from the parameters `speech_voice_params_new()` makes: several references
   (`speech_voice_params_add_reference()`), another loudness (`speech_voice_params_set_loudness()`) or the recordings' own
   (`speech_voice_params_keep_loudness()`), or a speaker-inversion embedding instead
-  (`speech_voice_params_set_embedding()`). A model that takes no voice files answers all three with
-  `SPEECH_ERROR_UNSUPPORTED` ([models/irodori-tts.md](models/irodori-tts.md#voices)).
+  (`speech_voice_params_set_embedding()`); for Drama 3, each reference's words (`speech_voice_params_set_transcript()`),
+  voice files made before (`speech_voice_params_add_voice()`) and the speaker each reference or voice file is given
+  (`speech_voice_params_set_speaker()`). A model that takes no voice files answers all three with
+  `SPEECH_ERROR_UNSUPPORTED` ([models/irodori-tts.md](models/irodori-tts.md#voices),
+  [models/drama3.md](models/drama3.md#voices)).
 - **Requests.** `speech_request_new()` makes a request for one model. It takes a text (`speech_request_set_text()`) or
   audio (`speech_request_set_audio()`), and options through the setter of each option's type. `speech_synthesize()`
   passes the audio to its callback as it is made, `speech_transcribe()` recognizes the whole audio at once, and
@@ -247,7 +251,7 @@ it concerns (an option's name, `text`, `audio`, `device`, `threads`, `name`, `pa
   other and for the pushes of its detections. A request is used by one thread at a time, but `speech_request_cancel()`
   may be called from any thread; a detection is used by one thread at a time. Information never changes once made and
   may be read from any thread. Separate models are independent.
-- **Versions.** `speech_version()` gives the release the library was built from (`"0.8.7"`). `SPEECH_API_VERSION_MAJOR`
+- **Versions.** `speech_version()` gives the release the library was built from (`"0.8.10"`). `SPEECH_API_VERSION_MAJOR`
   and `SPEECH_API_VERSION_MINOR`, and `speech_api_version_major()` and `speech_api_version_minor()` for a caller that
   loads the library at run time, give the API's version, 4.1. The major rises when a declaration changes in a way an
   existing caller notices, and the minor when a function, an option or an enum value is added. A program built against
@@ -263,17 +267,18 @@ Each model takes some of them, with ranges and defaults from its file, and `spee
 
 | Option | Type | Neutral | Taken by |
 |---|---|---|---|
-| `voice` | string | none | [Qwen3-TTS](models/qwen3-tts.md#options), [Irodori-TTS](models/irodori-tts.md#options); required |
+| `voice` | string | none | [Qwen3-TTS](models/qwen3-tts.md#options), [Irodori-TTS](models/irodori-tts.md#options), [Drama 3](models/drama3.md#options); required |
 | `language` | string | `auto` | every model but Silero VAD, which takes `auto` alone |
-| `seed` | int | none | Qwen3-TTS, Irodori-TTS |
+| `seed` | int | none | Qwen3-TTS, Irodori-TTS, Drama 3 |
 | `speed`, `seconds`, `duration_scale`, `steps` | float, float, float, int | 1, none, 1, none | Irodori-TTS |
-| `max_seconds` | float | none | Qwen3-TTS |
+| `max_seconds` | float | none | Qwen3-TTS, Drama 3 (each chunk of a long text) |
 | `timestamps` | bool | false | [FastConformer](models/fastconformer.md#options) |
 | `prompt` | string | `""` | [Qwen3-ASR](models/qwen3-asr.md#options) |
 | `draft` | string | `""` | [Qwen3-ASR](models/qwen3-asr.md#options) |
 | `decoding` | string | none | reazonspeech-nemo-v2 |
 | `decode_on_cpu` | bool | none | FastConformer |
-| `do_sample`, `top_k`, `top_p`, `temperature`, `repetition_penalty` | bool, int, float, float, float | none | Qwen3-TTS |
+| `experts_on_cpu` | bool | true | [Drama 3](models/drama3.md#devices-and-memory) |
+| `do_sample`, `top_k`, `top_p`, `temperature`, `repetition_penalty` | bool, int, float, float, float | none | Qwen3-TTS; `top_k`, `top_p` and `temperature` also Drama 3 |
 | `code_predictor_do_sample`, `code_predictor_top_k`, `code_predictor_top_p`, `code_predictor_temperature` | bool, int, float, float | none | Qwen3-TTS |
 | `instructions` | string | `""` | Qwen3-TTS 1.7B, Irodori-TTS |
 | `cfg_scale_text`, `cfg_scale_speaker`, `cfg_guidance_mode`, `cfg_min_t`, `cfg_max_t`, `truncation_factor`, `rescale_k`, `rescale_sigma`, `speaker_uncond_mode`, `sway_coeff`, `speaker_kv_scale`, `speaker_kv_min_t`, `speaker_kv_max_layers`, `cfg_scale_instructions` | float, but `cfg_guidance_mode` and `speaker_uncond_mode` string and `speaker_kv_max_layers` int | none | Irodori-TTS v4.1-Small (RF) |
@@ -317,6 +322,7 @@ loaded on Metal, with two of its nine voices and four of its options shown:
     {"name": "ono_anna", "language": "ja", "gender": "female", "description": "Playful Japanese female voice."}
   ],
   "voice_files": false,
+  "voice_recordings": false,
   "max_text_tokens": 24565,
   "options": [
     {"name": "voice", "type": "string", "required": true, "steers": true, "choices": ["aiden", "dylan", "eric", "ono_anna", "ryan", "serena", "sohee", "uncle_fu", "vivian"]},
@@ -334,19 +340,22 @@ loaded on Metal, with two of its nine voices and four of its options shown:
 - `organization` to `weight_type` are the model's identity, from the general keys of its file.
   `finetune` and `version` are left out for a model whose name has none. `source` is the repository the file was
   converted from and the revision. `weight_type` is the type that holds most of the weights: `F32`, `F16`, `Q8_0`, `Q6_K`, `Q5_K` or `Q4_K`.
-- `architecture` is the family: `qwen3-tts`, `irodori-tts`, `fastconformer`, `qwen3-asr` or `silero-vad`. `layout` is
+- `architecture` is the family: `qwen3-tts`, `irodori-tts`, `drama3`, `fastconformer`, `qwen3-asr` or `silero-vad`. `layout` is
   the version of the family's file layout. `task` is `synthesis`, `recognition` or `detection`; a detection model's
   `languages` is empty.
-- `incremental` is true for a model that passes audio while it still makes the rest (Qwen3-TTS), so that its first
+- `incremental` is true for a model that passes audio while it still makes the rest (Qwen3-TTS, Drama 3), so that its first
   audio does not wait on the length of the text, and false for one that makes a request's whole speech before it decodes
   it (Irodori-TTS).
-- Each voice's `language`, `gender` and `description` are `""` where the file does not say; a voice added from a voice
-  file or a recording says none. A recognition or detection model has no `voices`, `incremental` or `max_text_tokens`.
+- Each voice's `language`, `gender` and `description` are `""` where the file does not say. A voice added from a voice
+  file or a recording says none, but for Drama 3, whose description names the voice's speakers (`speakers 0 and 1`). A
+  recognition or detection model has no `voices`, `incremental` or `max_text_tokens`.
 - `voice_files` is true for a model that takes voices made from recordings; `voice_codec` then follows it, the hash a
-  voice file must carry.
+  voice file must carry. `voice_recordings` is true for a model that adds a voice from a WAVE file as well (Irodori-TTS),
+  and false for one that needs a voice file (Drama 3, whose voice files hold each recording's words).
 - An option has `type` (`string`, `int`, `float`, `bool`), `required`, `steers`, and where they apply `default`,
   `minimum` or `exclusive_minimum`, `maximum`, and `choices`.
 - `device` and `threads` are there for a loaded model alone. `threads` is the number of CPU threads in effect for a model
   on the CPU or for a model on a GPU that can compute part of a request on the CPU (FastConformer's decoding with
-  `decode_on_cpu`), and 0 for a model on a GPU that computes nothing there. Setting threads is never an error, since
+  `decode_on_cpu`, or Drama 3's experts that its GPU does not hold), and 0 for a model on a GPU that computes nothing
+  there. Setting threads is never an error, since
   with the device `auto` a caller cannot know where the model will run.

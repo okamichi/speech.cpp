@@ -1,17 +1,20 @@
 #include "graph.h"
 
 #include <cstring>
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 
 #include "error.h"
 
-void compute_graph(ggml_backend_t backend, ggml_cgraph * gf) {
-    const std::string device = ggml_backend_name(backend);
+namespace {
+
+/** Runs `compute` on `device`, throwing an Error of the device or of its memory for a computation that fails. */
+void computing(const std::string & device, const std::function<ggml_status()> & compute) {
     ggml_status status = GGML_STATUS_FAILED;
     try {
-        status = ggml_backend_graph_compute(backend, gf);
+        status = compute();
     } catch (const std::system_error & e) {
         // ggml's Vulkan backend allocates buffers of its own while it computes and throws vulkan-hpp's exceptions out of
         // ggml_backend_graph_compute() when one does not fit: vk::OutOfDeviceMemoryError and vk::OutOfHostMemoryError,
@@ -25,6 +28,12 @@ void compute_graph(ggml_backend_t backend, ggml_cgraph * gf) {
     }
     if (status == GGML_STATUS_ALLOC_FAILED) throw Error(Fault::OutOfMemory, "the memory of " + device + " ran out while it computed a graph");
     if (status != GGML_STATUS_SUCCESS) throw Error(Fault::Device, "the device " + device + " failed to compute a graph");
+}
+
+}  // namespace
+
+void compute_graph(ggml_backend_t backend, ggml_cgraph * gf) {
+    computing(ggml_backend_name(backend), [&] { return ggml_backend_graph_compute(backend, gf); });
 }
 
 Graph::Graph(int max_nodes) {
@@ -87,6 +96,17 @@ void Graph::expand(ggml_tensor * t) {
 void Graph::compute(ggml_backend_t backend, ggml_gallocr_t allocr) {
     if (!ggml_gallocr_alloc_graph(allocr, gf_)) throw Error(Fault::OutOfMemory, "cannot allocate the memory of a graph on the device");
     compute_again(backend);
+}
+
+void Graph::compute(ggml_backend_sched_t sched) {
+    std::string devices;
+    for (int i = 0; i < ggml_backend_sched_get_n_backends(sched); i++) {
+        devices += (i ? " and " : "") + std::string(ggml_backend_name(ggml_backend_sched_get_backend(sched, i)));
+    }
+    ggml_backend_sched_reset(sched);
+    if (!ggml_backend_sched_alloc_graph(sched, gf_)) throw Error(Fault::OutOfMemory, "cannot allocate the memory of a graph on " + devices);
+    for (const Upload & u : uploads_) ggml_backend_tensor_set(u.tensor, u.bytes.data(), 0, u.bytes.size());
+    computing(devices, [&] { return ggml_backend_sched_graph_compute(sched, gf_); });
 }
 
 Graph::Upload & Graph::upload_of(const ggml_tensor * input) {

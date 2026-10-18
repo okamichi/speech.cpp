@@ -84,6 +84,23 @@
       ]
     },
     {
+      "name": "drama-3",
+      "repository": "sakasegawa/drama-3-GGUF",
+      "type": "q4_k",
+      "start": [],
+      "revision": "b6fa51cff778b69e72ee4994f85311b4c5ab6bc5",
+      "task": "synthesis",
+      "languages": ["af", "am", "ar", "as", "az", "be", "bg", "bn", "bo", "br", "bs", "ca", "cs", "cy", "da", "de", "el", "en", "es", "et", "eu", "fa", "fi", "fo", "fr", "gl", "gu", "he", "hi", "hr", "ht", "hu", "hy", "id", "is", "it", "ja", "jv", "ka", "kk", "km", "kn", "ko", "la", "lt", "lv", "mi", "ml", "mn", "mr", "ms", "my", "ne", "nl", "nn", "no", "pa", "pl", "ps", "pt", "ro", "ru", "sa", "sd", "si", "sk", "sl", "sn", "sq", "sr", "sv", "sw", "ta", "te", "th", "tl", "tr", "uk", "ur", "vi", "yi", "yo", "zh"],
+      "voice_files": true,
+      "files": [
+        {"type": "q4_k", "file": "Drama-35B-A3B-v3-Q4_K.gguf", "size": 20787264352, "sha256": "2a57b14c9b208a2ff833ab7305b920ca8f154ad807004a52d96a86a90a55523e"},
+        {"type": "f16", "file": "Drama-35B-A3B-v3-F16.gguf", "size": 71612483232, "sha256": "99f63d2f1d5c6af1b113518f74bab17fdcbcf306c6c4bed40669f665092d3491"},
+        {"type": "q8_0", "file": "Drama-35B-A3B-v3-Q8_0.gguf", "size": 38465601376, "sha256": "db0b1f195b4e49183ef5aa84de8af78bb8f873bcdab73ef60931598bc7b95da8"},
+        {"type": "q6_k", "file": "Drama-35B-A3B-v3-Q6_K.gguf", "size": 29902656896, "sha256": "bb232b7ac08cffc5cd5f21a69e37bdbf198351c45433fd57e156992da934f9fe"},
+        {"type": "q5_k", "file": "Drama-35B-A3B-v3-Q5_K.gguf", "size": 25206848608, "sha256": "3a26462bf34e504df5026193563910338be3140e243a516e1b8661e18037c21a"}
+      ]
+    },
+    {
       "name": "qwen3-asr-0.6b",
       "repository": "sakasegawa/Qwen3-ASR-0.6B-GGUF",
       "type": "q8_0",

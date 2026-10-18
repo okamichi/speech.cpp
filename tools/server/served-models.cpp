@@ -21,8 +21,9 @@ std::shared_ptr<const speech_model_info> read_info(const speech_model * model) {
 
 }  // namespace
 
-Served::Served(Model model, std::string path, std::string catalog_name)
-    : model_(std::move(model)), path_(std::move(path)), catalog_name_(std::move(catalog_name)), info_(read_info(model_.get())) {}
+Served::Served(Model model, std::string path, std::string catalog_name, double load_seconds)
+    : model_(std::move(model)), path_(std::move(path)), catalog_name_(std::move(catalog_name)), load_seconds_(load_seconds),
+      info_(read_info(model_.get())) {}
 
 std::shared_ptr<const speech_model_info> Served::info() const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -70,10 +71,13 @@ Loading ServedModels::loading_of(speech_task task) const {
     return task == SPEECH_TASK_DETECTION ? detection_loading(loading_) : loading_;
 }
 
-void ServedModels::load_given(const std::string & path, const std::string & catalog_name) {
+std::shared_ptr<Served> ServedModels::load_given(const std::string & path, const std::string & catalog_name) {
     const speech_task task = speech_model_info_task(file_info(path).get());
     if (task == SPEECH_TASK_SYNTHESIS && compatible_) require_irodori_compatible(file_info(path).get());
-    auto served = std::make_shared<Served>(load_model(path, loading_of(task)), path, catalog_name);
+    const auto t0 = std::chrono::steady_clock::now();
+    Model model = load_model(path, loading_of(task));
+    auto served = std::make_shared<Served>(std::move(model), path, catalog_name,
+                                           std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
     if (task == SPEECH_TASK_SYNTHESIS) voices_.restore(*served);
     std::lock_guard<std::mutex> lock(mutex_);
     Place & p = place(task);
@@ -81,7 +85,8 @@ void ServedModels::load_given(const std::string & path, const std::string & cata
         throw UsageError(std::string("give one model of each task; ") + p.model->path() + " and " + path + " are both speech " + task_name(task) +
                          " models");
     }
-    p.model = std::move(served);
+    p.model = served;
+    return served;
 }
 
 std::shared_ptr<Served> ServedModels::of(speech_task task) const {
@@ -138,7 +143,9 @@ std::shared_ptr<Served> ServedModels::replace(speech_task task, const std::strin
     while (!old.expired()) std::this_thread::sleep_for(std::chrono::milliseconds(50));
     std::shared_ptr<Served> served;
     try {
-        served = std::make_shared<Served>(load_model(path, loading_of(task)), path, name);
+        const auto t0 = std::chrono::steady_clock::now();
+        Model model = load_model(path, loading_of(task));
+        served = std::make_shared<Served>(std::move(model), path, name, std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
         if (task == SPEECH_TASK_SYNTHESIS) voices_.restore(*served);
         if (speech_model_info_task(served->info().get()) != task) {
             throw Failure(speech_status_name(SPEECH_ERROR_MODEL_FILE), "", path + " is a speech " +

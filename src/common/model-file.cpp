@@ -134,7 +134,14 @@ ModelFile::ModelFile(const std::string & path, ggml_backend_t backend, const Lay
                      const std::function<bool(const std::string & name)> & keep)
     : path_(path), architecture_(layout.architecture), remedy_(layout.remedy) {
     open(layout);
-    allocate(backend, keep);
+    allocate([&](const std::string & name) { return !keep || keep(name) ? backend : nullptr; });
+    load();
+}
+
+ModelFile::ModelFile(const std::string & path, const Layout & layout, const std::function<ggml_backend_t(const std::string & name)> & place)
+    : path_(path), architecture_(layout.architecture), remedy_(layout.remedy) {
+    open(layout);
+    allocate(place);
     load();
 }
 
@@ -146,10 +153,8 @@ ModelFile::ModelFile(const std::string & path, const Layout & layout)
 ModelFile::ModelFile(const ModelFile & source, ggml_backend_t backend, const std::function<bool(const std::string & name)> & keep)
     : path_(source.path_), architecture_(source.architecture_), remedy_(source.remedy_), version_(source.version_), gguf_(source.gguf_),
       ctx_(source.ctx_) {
-    allocate(backend, keep ? keep : [](const std::string &) { return true; });
-    for (ggml_tensor * t = ggml_get_first_tensor(loaded_); t; t = ggml_get_next_tensor(loaded_, t)) {
-        ggml_backend_tensor_copy(source.tensor(ggml_get_name(t)), t);
-    }
+    allocate([&](const std::string & name) { return (!keep || keep(name)) && source.by_name_.count(name) ? backend : nullptr; });
+    for (const auto & [name, t] : by_name_) ggml_backend_tensor_copy(source.tensor(name), t);
 }
 
 void ModelFile::open(const Layout & layout) {
@@ -214,23 +219,29 @@ void ModelFile::check_tensors(const Layout & layout) const {
     }
 }
 
-void ModelFile::allocate(ggml_backend_t backend, const std::function<bool(const std::string & name)> & keep) {
-    loaded_ = ctx_.get();
-    if (keep) {
-        const int64_t n = gguf_get_n_tensors(gguf_.get());
-        ggml_init_params params = {ggml_tensor_overhead() * (size_t) std::max<int64_t>(n, 1), nullptr, true};
-        kept_.reset(ggml_init(params));
-        if (!kept_) throw Error(Fault::OutOfMemory, "cannot create a ggml context for the tensors of " + path_);
-        for (int64_t i = 0; i < n; i++) {
-            const char * name = gguf_get_tensor_name(gguf_.get(), i);
-            if (keep(name)) ggml_set_name(ggml_dup_tensor(kept_.get(), ggml_get_tensor(ctx_.get(), name)), name);
+void ModelFile::allocate(const std::function<ggml_backend_t(const std::string & name)> & place) {
+    const int64_t n = gguf_get_n_tensors(gguf_.get());
+    std::vector<ggml_backend_t> backends;
+    for (int64_t i = 0; i < n; i++) {
+        const char * name = gguf_get_tensor_name(gguf_.get(), i);
+        ggml_backend_t backend = place(name);
+        if (!backend) continue;
+        const size_t at = (size_t) (std::find(backends.begin(), backends.end(), backend) - backends.begin());
+        if (at == backends.size()) {
+            ggml_init_params params = {ggml_tensor_overhead() * (size_t) n, nullptr, true};
+            kept_.emplace_back(ggml_init(params), ggml_free);
+            if (!kept_.back()) throw Error(Fault::OutOfMemory, "cannot create a ggml context for the tensors of " + path_);
+            backends.push_back(backend);
         }
-        loaded_ = kept_.get();
+        ggml_tensor * t = ggml_dup_tensor(kept_[at].get(), ggml_get_tensor(ctx_.get(), name));
+        ggml_set_name(t, name);
+        by_name_.emplace(name, t);
     }
-    buffer_.reset(ggml_backend_alloc_ctx_tensors(loaded_, backend));
-    if (!buffer_) throw Error(Fault::OutOfMemory, "cannot allocate the weights of " + path_ + " on " + ggml_backend_name(backend));
-    ggml_backend_buffer_set_usage(buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-    for (ggml_tensor * t = ggml_get_first_tensor(loaded_); t; t = ggml_get_next_tensor(loaded_, t)) by_name_.emplace(ggml_get_name(t), t);
+    for (size_t i = 0; i < backends.size(); i++) {
+        buffers_.emplace_back(ggml_backend_alloc_ctx_tensors(kept_[i].get(), backends[i]), ggml_backend_buffer_free);
+        if (!buffers_.back()) throw Error(Fault::OutOfMemory, "cannot allocate the weights of " + path_ + " on " + ggml_backend_name(backends[i]));
+        ggml_backend_buffer_set_usage(buffers_.back().get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    }
 }
 
 void ModelFile::load() {
@@ -240,8 +251,9 @@ void ModelFile::load() {
     std::vector<uint8_t> piece;
     for (int64_t i = 0; i < gguf_get_n_tensors(gguf_.get()); i++) {
         const char * name = gguf_get_tensor_name(gguf_.get(), i);
-        ggml_tensor * t = ggml_get_tensor(loaded_, name);
-        if (!t) continue;
+        const auto it = by_name_.find(name);
+        if (it == by_name_.end()) continue;
+        ggml_tensor * t = it->second;
         const size_t size = ggml_nbytes(t);
         bool read = seek_file(f.get(), data_offset + gguf_get_tensor_offset(gguf_.get(), i));
         for (size_t done = 0; read && done < size;) {
@@ -418,8 +430,14 @@ uint64_t ModelFile::file_bytes() const {
 }
 
 uint64_t ModelFile::weight_bytes() const {
+    return weight_bytes([](const std::string &) { return true; });
+}
+
+uint64_t ModelFile::weight_bytes(const std::function<bool(const std::string & name)> & which) const {
     uint64_t bytes = 0;
-    for (int64_t i = 0; i < gguf_get_n_tensors(gguf_.get()); i++) bytes += gguf_get_tensor_size(gguf_.get(), i);
+    for (int64_t i = 0; i < gguf_get_n_tensors(gguf_.get()); i++) {
+        if (which(gguf_get_tensor_name(gguf_.get(), i))) bytes += gguf_get_tensor_size(gguf_.get(), i);
+    }
     return bytes;
 }
 

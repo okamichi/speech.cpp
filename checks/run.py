@@ -11,7 +11,7 @@ GPU once with each attention. A check whose dumps or inputs are missing is skipp
 A check that exits with 2 refused its arguments, as a check refuses weights it cannot judge; that is reported apart and
 does not fail the run. Any other exit but 0 fails it. Each check's whole output goes to a log of its own in --logs.
 
-families: qwen3-tts, irodori-tts, qwen3-asr, fastconformer, silero-vad, common (the checks that take no model), all
+families: qwen3-tts, irodori-tts, drama3, qwen3-asr, fastconformer, silero-vad, common (the checks that take no model), all
 
 usage: python3 checks/run.py <family>... [--build DIR] [--devices cpu,gpu] [--types F32] [--models PATH...]
                              [--reference DIR] [--references DIR] [--decoder-text FILE] [--only CHECK...]
@@ -29,7 +29,7 @@ import tempfile
 import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FAMILIES = ["qwen3-tts", "irodori-tts", "qwen3-asr", "fastconformer", "silero-vad", "common"]
+FAMILIES = ["qwen3-tts", "irodori-tts", "drama3", "qwen3-asr", "fastconformer", "silero-vad", "common"]
 # general.file_type's values of the weight types speech.cpp writes, as weight_types() of src/common/storage.cpp lists
 # them; a script cannot read that table.
 FILE_TYPES = {0: "F32", 1: "F16", 7: "Q8_0", 18: "Q6_K", 16: "Q5_K", 14: "Q4_K"}
@@ -273,6 +273,38 @@ def irodori_tts(model, devices, ctx):
     return runs
 
 
+def drama3(model, devices, ctx):
+    out = os.path.join(ctx.reference, "drama3", "out")
+    dumps = []
+    if os.path.isdir(out):
+        for d in sorted(os.listdir(out)):
+            meta = os.path.join(out, d, "meta.json")
+            if os.path.isfile(meta):
+                with open(meta, encoding="utf-8") as f:
+                    m = json.load(f)
+                if "https://huggingface.co/" + m["model"]["repository"] == model.repository and m.get("reference"):
+                    dumps.append(os.path.join(out, d))
+    sampling, prompts = os.path.join(out, "sampling"), os.path.join(out, "prompt-cases.jsonl")
+    runs = [Run("drama3-prompt-check", [model.path, prompts], None, model.label()) if os.path.isfile(prompts)
+            else missing("drama3-prompt-check", model.label(), prompts),
+            Run("drama3-sampler-check", [model.path, sampling], None, model.label()) if os.path.isdir(sampling)
+            else missing("drama3-sampler-check", model.label(), sampling)]
+    if not dumps:
+        return runs + [missing("drama3-codec-check", model.label(), f"dump of {model.name} with a reference under {out}")]
+    for device in devices:
+        for d in dumps:
+            # The codec check reads the dump's reference recording too, where --references holds it.
+            with open(os.path.join(d, "meta.json"), encoding="utf-8") as f:
+                wav = os.path.join(ctx.references, json.load(f)["reference"]["file"]) if ctx.references else None
+            runs.append(runs_on(device, "drama3-codec-check", model, [d] + ([wav] if wav and os.path.isfile(wav) else []), " " + os.path.basename(d)))
+        runs += [runs_on(device, f"drama3-{stage}-check", model, [d], " " + os.path.basename(d)) for stage in ("text-model", "audio-decoder") for d in dumps]
+        # On a GPU, the text model again with its experts on the CPU, as a GPU that does not hold them runs it.
+        if device != "cpu":
+            runs += [Run("drama3-text-model-check", [model.path, d, device, "experts-on-cpu"], device,
+                         f"{model.label()} {device} experts-on-cpu {os.path.basename(d)}") for d in dumps]
+    return runs
+
+
 def qwen3_asr(model, devices, ctx):
     out = os.path.join(ctx.reference, "qwen3-asr", "out")
     absent = named_dumps("qwen3-asr", model, out)
@@ -318,7 +350,7 @@ def common(ctx):
     return runs
 
 
-PLANS = {"qwen3-tts": qwen3_tts, "irodori-tts": irodori_tts, "qwen3-asr": qwen3_asr, "fastconformer": fastconformer, "silero-vad": silero_vad}
+PLANS = {"qwen3-tts": qwen3_tts, "irodori-tts": irodori_tts, "drama3": drama3, "qwen3-asr": qwen3_asr, "fastconformer": fastconformer, "silero-vad": silero_vad}
 
 
 def executable(build, check):
@@ -377,7 +409,7 @@ def main():
     p.add_argument("--types", default="F32", help="comma-separated weight types of the files to check, or all")
     p.add_argument("--models", nargs="+", help="model files or folders to look in (default: models/ and the model cache)")
     p.add_argument("--reference", default=os.path.join(REPO, "reference"), help="the folder of <family>/out/")
-    p.add_argument("--references", help="the folder of the reference WAVE files Irodori-TTS's dumps name")
+    p.add_argument("--references", help="the folder of the reference WAVE files Irodori-TTS's and Drama 3's dumps name")
     p.add_argument("--decoder-text", help="the text qwen3-decoder-check runs (default: the Qwen3-TTS dumps' texts)")
     p.add_argument("--only", nargs="+", help="run only these checks, by executable name")
     p.add_argument("--logs", help="the folder for each check's output (default: a new temporary folder)")

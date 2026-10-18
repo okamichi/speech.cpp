@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -19,6 +20,7 @@
 #include "fetch.h"
 #include "json-reader.h"
 #include "json.h"
+#include "terminal.h"
 
 // The subcommands about models and devices rather than requests: speech voice makes a voice file, speech info prints
 // what a model file says without loading it, and speech devices lists the devices a model can run on.
@@ -117,16 +119,43 @@ int run_voice(const CommandLine & line, FILE *) {
     speech_voice_params * raw = nullptr;
     check(speech_voice_params_new(&raw));
     const std::unique_ptr<speech_voice_params, decltype(&speech_voice_params_free)> voice(raw, speech_voice_params_free);
-    // A voice is several recordings or one embedding; the library refuses an embedding beside recordings.
+    // A voice is several recordings and voice files, or one embedding; the library refuses an embedding beside them.
+    // The transcripts go to the recordings and the speakers to the recordings and voice files, each in order.
+    const std::vector<std::string> transcripts = line.values("--transcript"), speakers = line.values("--speaker");
     std::optional<std::string> embedding;
+    size_t recordings = 0, parts = 0;
     for (size_t i = 1; i + 1 < line.args.size(); i++) {
-        if (!is_embedding(line.args[i])) {
-            check(speech_voice_params_add_reference(raw, line.args[i].c_str()));
-        } else if (embedding) {
-            throw UsageError("give one embedding, not " + *embedding + " and " + line.args[i]);
-        } else {
-            embedding = line.args[i];
+        const std::string & input = line.args[i];
+        if (is_embedding(input)) {
+            if (embedding) throw UsageError("give one embedding, not " + *embedding + " and " + input);
+            embedding = input;
+            continue;
         }
+        const bool voice_file = input.size() > 5 && input.compare(input.size() - 5, 5, ".gguf") == 0;
+        check(voice_file ? speech_voice_params_add_voice(raw, input.c_str()) : speech_voice_params_add_reference(raw, input.c_str()));
+        if (!voice_file && !transcripts.empty()) {
+            if (recordings >= transcripts.size()) throw UsageError("give a --transcript for each recording, and " + input + " has none");
+            check(speech_voice_params_set_transcript(raw, transcripts[recordings].c_str()));
+        }
+        if (!speakers.empty()) {
+            if (parts >= speakers.size()) throw UsageError("give a --speaker for each recording and voice file, or none, and " + input + " has none");
+            char * end = nullptr;
+            const long speaker = std::strtol(speakers[parts].c_str(), &end, 10);
+            if (speakers[parts].empty() || *end != '\0' || speaker < 0 || speaker > INT_MAX) {
+                throw UsageError("--speaker takes a speaker's number from 0, not \"" + speakers[parts] + "\"");
+            }
+            check(speech_voice_params_set_speaker(raw, (int) speaker));
+        }
+        recordings += !voice_file;
+        parts++;
+    }
+    if (!transcripts.empty() && transcripts.size() != recordings) {
+        throw UsageError("give one --transcript for each recording: " + std::to_string(recordings) + " recordings and " + std::to_string(transcripts.size()) +
+                         " transcripts");
+    }
+    if (!speakers.empty() && speakers.size() != parts) {
+        throw UsageError("give one --speaker for each recording and voice file: " + std::to_string(parts) + " of them and " +
+                         std::to_string(speakers.size()) + " speakers");
     }
     if (embedding) {
         const Embedding e = read_embedding(*embedding);
@@ -140,10 +169,14 @@ int run_voice(const CommandLine & line, FILE *) {
     }
     if (line.has("--keep-loudness")) check(speech_voice_params_keep_loudness(raw));
     const std::string & out = line.args.back();
+    // A model named for the first time is fetched here, with its own progress, before the voice is made.
+    const std::string path = model_file(line.args[0]);
     const auto t0 = std::chrono::steady_clock::now();
-    check(speech_voice_make_from(model_file(line.args[0]).c_str(), raw, out.c_str(), params.get()));
-    const double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::fprintf(stderr, "wrote %s in %.2f s\n", out.c_str(), took);
+    terminal::Status status("Making the voice with " + argument_label(line.args[0]));
+    check(speech_voice_make_from(path.c_str(), raw, out.c_str(), params.get()));
+    char took[32];
+    std::snprintf(took, sizeof took, " in %.2f s", std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+    status.done("Wrote " + out + took);
     if (line.has("-v")) std::fprintf(stderr, "speech.cpp %s, device %s\n", speech_version(), loading.device->c_str());
     return 0;
 }
@@ -205,9 +238,11 @@ std::string meta_text(const std::string & value) {
 
 void print_info(const speech_model_info * m, bool meta, FILE * out) {
     const bool synthesis = speech_model_info_task(m) == SPEECH_TASK_SYNTHESIS;
-    std::string text = std::string(speech_model_info_name(m)) + "\n";
+    using terminal::Color;
+    using terminal::paint;
+    std::string text = paint(Color::Bold, speech_model_info_name(m), out) + "\n";
     const auto row = [&](const std::string & label, const std::string & value) {
-        text += label + std::string(label.size() < 15 ? 15 - label.size() : 1, ' ') + value + "\n";
+        text += paint(Color::Gray, label + std::string(label.size() < 15 ? 15 - label.size() : 1, ' '), out) + value + "\n";
     };
     const char * finetune = speech_model_info_finetune(m), * version = speech_model_info_version(m);
     const char * repository = nullptr, * revision = nullptr;
@@ -234,9 +269,14 @@ void print_info(const speech_model_info * m, bool meta, FILE * out) {
             if (!gender.empty()) about += (about.empty() ? "" : ", ") + gender;
             if (!description.empty()) about += (about.empty() ? "" : ": ") + description;
             std::string name = speech_model_info_voice_name(m, i);
-            row(i == 0 ? "voices" : "", name + std::string(name.size() < 14 ? 14 - name.size() : 1, ' ') + about);
+            row(i == 0 ? "voices" : "", paint(Color::Lavender, name + std::string(name.size() < 14 ? 14 - name.size() : 1, ' '), out) + about);
         }
-        row("voice files", speech_model_info_voice_files(m) ? std::string("yes, of the codec ") + speech_model_info_voice_codec(m) : "no");
+        if (!speech_model_info_voice_files(m)) {
+            row("voice files", "no");
+        } else {
+            row("voice files", std::string("yes, of the codec ") + speech_model_info_voice_codec(m) +
+                                   (speech_model_info_voice_recordings(m) ? "; a WAVE file is added as a voice too" : "; made with speech voice"));
+        }
         row("text", "at most " + std::to_string(speech_model_info_max_text_tokens(m)) + " tokens");
     }
     size_t width = 16;
@@ -246,7 +286,7 @@ void print_info(const speech_model_info * m, bool meta, FILE * out) {
     for (size_t i = 0; i < speech_model_info_option_count(m); i++) {
         const speech_option o = speech_model_info_option(m, i);
         const std::string name = speech_option_name(o);
-        row(i == 0 ? "options" : "", name + std::string(width - name.size(), ' ') + option_line(m, o));
+        row(i == 0 ? "options" : "", paint(Color::Lavender, name + std::string(width - name.size(), ' '), out) + option_line(m, o));
     }
     row("size", gigabytes(speech_model_info_file_bytes(m)) + " file, " + gigabytes(speech_model_info_weight_bytes(m)) + " of weights");
     if (meta) {
@@ -291,10 +331,13 @@ int run_devices(const CommandLine & line, FILE * out) {
                     json_string(speech_device_description(i)) + ",\"kind\":\"" + device_kind_name(i) + "\",\"memory_total\":" +
                     std::to_string(total) + ",\"memory_free\":" + std::to_string(free) + "}";
         } else {
-            char row[512];
-            std::snprintf(row, sizeof row, "%-10s %-5s %s, %.1f GB, %.1f GB free\n", speech_device_name(i), device_kind_name(i),
-                          speech_device_description(i), total / 1e9, free / 1e9);
-            text += row;
+            char name[32], kind[16], about[448];
+            std::snprintf(name, sizeof name, "%-10s", speech_device_name(i));
+            std::snprintf(kind, sizeof kind, "%-5s", device_kind_name(i));
+            std::snprintf(about, sizeof about, "%s, %.1f GB, %.1f GB free", speech_device_description(i), total / 1e9, free / 1e9);
+            const bool cpu = std::string(device_kind_name(i)) == "cpu";
+            text += terminal::paint(terminal::Color::Bold, name, out) + " " + terminal::paint(cpu ? terminal::Color::Gray : terminal::Color::Mint, kind, out) +
+                    " " + about + "\n";
         }
     }
     if (json) text += "]}\n";
@@ -305,21 +348,60 @@ int run_devices(const CommandLine & line, FILE * out) {
 
 }  // namespace
 
+void require_options(const std::string & path, const CommandLine & line) {
+    const ModelInfo info = file_info(path);
+    const speech_model_info * m = info.get();
+    for (size_t i = 0; i < speech_model_info_option_count(m); i++) {
+        const speech_option o = speech_model_info_option(m, i);
+        const bool given = std::any_of(line.options.begin(), line.options.end(), [&](const RequestOption & r) { return r.option == o; });
+        if (given || !speech_model_info_option_required(m, o)) continue;
+        std::string message = std::string(speech_model_info_name(m)) + " needs " + option_flag(o);
+        if (o == SPEECH_OPT_VOICE) {
+            std::string voices;
+            for (size_t v = 0; v < speech_model_info_voice_count(m); v++) voices += (voices.empty() ? "" : ", ") + std::string(speech_model_info_voice_name(m, v));
+            for (const auto & added : line.loading(false).voices) voices += (voices.empty() ? "" : ", ") + added.first;
+            message += " NAME: ";
+            if (!voices.empty()) message += "one of its voices (" + voices + ")";
+            if (speech_model_info_voice_files(m)) message += (voices.empty() ? "" : " or ") + std::string("one added with --add-voice NAME=FILE");
+        } else {
+            message += "; `speech info " + line.args[0] + "` says what it takes";
+        }
+        throw Failure(speech_status_name(SPEECH_ERROR_INVALID_ARGUMENT), speech_option_name(o), message);
+    }
+}
+
+std::string loaded_line(const std::vector<const speech_model_info *> & models, double seconds) {
+    std::string out = "Loaded";
+    for (size_t i = 0; i < models.size(); i++) {
+        out += std::string(i ? " and " : " ") + speech_model_info_name(models[i]) + " on " + speech_model_info_device(models[i]);
+    }
+    char took[32];
+    std::snprintf(took, sizeof took, " in %.2f s", seconds);
+    return out + took;
+}
+
 Command voice_command() {
     Command c;
     c.name = "voice";
-    c.usage = "voice MODEL (REFERENCE.wav... | EMBEDDING.speaker.safetensors) VOICE.gguf [options]";
-    c.summary = "make a voice file from reference recordings or a speaker-inversion embedding";
+    c.usage = "voice MODEL ((REFERENCE.wav | VOICE.gguf)... | EMBEDDING.speaker.safetensors) OUT.gguf [options]";
+    c.summary = "make a voice file from reference recordings, voice files or a speaker-inversion embedding";
     c.description =
         "Makes a voice file from one or more reference recordings in WAVE files at any rate, each encoded on its own and\n"
         "joined in order, reading only the codec's encoder from MODEL, for a model whose information says it takes voice\n"
         "files (Irodori-TTS). Each recording is brought to the model's loudness first, or to --lufs, or kept as it is with\n"
         "--keep-loudness. On the CPU, the default here, the voice's latent is the official encoder's to 99 dB SNR; a GPU\n"
         "computes it in less precision. A speaker-inversion embedding in a .speaker.safetensors file, as the official\n"
-        "runtime saves one, makes a voice of its own for MODEL, which no other model takes.";
+        "runtime saves one, makes a voice of its own for MODEL, which no other model takes.\n"
+        "\n"
+        "Drama 3 reads each recording's words beside it, given by --transcript in the order of the recordings, and gives\n"
+        "each recording or voice file one of the speakers a text names, by --speaker in their order: a recording is\n"
+        "speaker 0's and a voice file keeps its speakers unless one is given. A voice file of Drama 3 as an input adds its\n"
+        "recordings as they are, so that a voice of several speakers is put together from voices made before.";
     c.flags = {
         {"--lufs", "LUFS", false, "the loudness each recording is brought to, instead of the model's (-16)"},
         {"--keep-loudness", "", false, "keep each recording's loudness, scaling down a peak above 1"},
+        {"--transcript", "TEXT", true, "Drama 3: the words of a recording, one for each in their order"},
+        {"--speaker", "N", true, "Drama 3: the speaker of a recording or voice file, one for each in their order"},
         device_flag("cpu (the default here), auto, gpu or a name `speech devices` lists"),
         threads_flag(),
         verbose_flag("also report the release and the device"),
